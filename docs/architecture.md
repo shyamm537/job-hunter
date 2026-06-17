@@ -52,6 +52,10 @@ Today `backend: ollama` is the only valid value — anything else raises `ValueE
 - Resume parsing — `resume_summary` in `config.yaml` is a hand-written string, not extracted from a file (left alone as part of the LLM/prompt path)
 - A live-Postgres test run — `database.url` is wired and the engine is built from it, but the suite has only been exercised against SQLite (see `docs/roadmap.md`)
 
+## Storage backend: SQLite vs. Postgres
+
+SQLite is the product; Postgres is a documented escape hatch that would need a real test pass before you trusted it. The storage layer goes through SQLModel/SQLAlchemy, so the database URL isn't hardcoded and *can* point at Postgres — but that's optionality, not a validated feature. The Postgres path has never been run here and no non-SQLite driver (e.g. `psycopg`) is pinned. For a single-user job tracker, SQLite has ample headroom; Postgres earns its keep only with concurrent writers or a shared/hosted deployment, none of which is on the table today. See `TODO.md` for what a real Postgres pass would require.
+
 ## (TODO) Deployment
 
-Nothing here yet. The project currently assumes local SQLite + local Ollama. A Docker Compose setup for Postgres + a containerized app is mentioned as a stretch goal in the roadmap but has no implementation.
+Nothing here yet. The project currently assumes local SQLite + local Ollama. A Docker Compose setup for Postgres + a containerized app is mentioned as a stretch goal but has no implementation — and would depend on the Postgres verification above.

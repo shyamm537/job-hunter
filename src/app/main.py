@@ -5,17 +5,43 @@ CLI steps (`make scrape`, `make process`) so the UI thread never blocks on
 either. The app only reads from, and writes status updates to, the DB.
 """
 
-import streamlit as st
-from sqlmodel import select
+import sys
+from pathlib import Path
 
-from src.storage.database import get_session, init_db
-from src.storage.models import JobPost
+# `streamlit run src/app/main.py` puts src/app/ on sys.path (not the project
+# root), so the `import src...` lines below would fail with ModuleNotFoundError.
+# Add the repo root explicitly so imports resolve the same way they do under
+# `python -m src...`. This must run before the `src.` imports.
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+import streamlit as st  # noqa: E402
+from sqlmodel import select  # noqa: E402
+
+from src.config import ConfigError, load_config  # noqa: E402
+from src.logging_config import setup_logging  # noqa: E402
+from src.storage.database import get_session, init_db, set_database_url  # noqa: E402
+from src.storage.models import JobPost  # noqa: E402
 
 STATUSES = ["To Apply", "Applied", "Interviewing", "Rejected"]
+
+setup_logging()
 
 st.set_page_config(page_title="Job Hunter AI", layout="wide")
 st.title("Job Hunter AI")
 
+# Reach the database the same way the CLIs do: load + validate config, then
+# point the storage layer at the configured URL. Without this the app would
+# fall back to database.py's silent default and could quietly read a
+# different database than `make scrape` / `make process` wrote to.
+try:
+    config = load_config()
+except ConfigError as exc:
+    st.error(str(exc))
+    st.stop()
+
+set_database_url(config.database.url)
 init_db()
 
 with get_session() as session:

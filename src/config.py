@@ -87,7 +87,14 @@ class LLMConfig(BaseModel):
 
 class DatabaseConfig(BaseModel):
     """Database connection. `url` is now actually read (it used to be a
-    documented-but-ignored field — see docs/configuration.md)."""
+    documented-but-ignored field — see docs/configuration.md).
+
+    SQLite is the product; Postgres is a documented escape hatch that would
+    need a real test pass before you trusted it. Any non-SQLite URL is
+    *supported by abstraction only* (SQLModel/SQLAlchemy speak it), but
+    unverified: no live run, and no non-SQLite driver is pinned in
+    requirements.txt. Set such a URL at your own risk until that changes.
+    """
 
     url: str = DEFAULT_DATABASE_URL
 

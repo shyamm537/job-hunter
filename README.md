@@ -2,7 +2,16 @@
 
 A local-first job application pipeline: scrape postings, store them in a database, generate tailored cover letters and cold emails with a local LLM, and track application status — all from a Streamlit dashboard.
 
-No cloud dependency required. Runs on SQLite + Ollama by default; swap in PostgreSQL or a hosted LLM via config when you need to scale.
+No cloud dependency required. Runs on SQLite + Ollama by default. SQLite is the product; Postgres is a documented escape hatch that would need a real test pass before you trusted it (the URL is configurable and the abstraction can speak Postgres, but that path is unverified and no driver is pinned — see `docs/configuration.md` and `TODO.md`). A hosted LLM is likewise an open, not-yet-built option.
+
+> [!CAUTION]
+> **Always run the dashboard bound to localhost.** Launch Streamlit as
+> `streamlit run src/app/main.py --server.address localhost` (the `make app`
+> target already does this for you). By default Streamlit binds to **all**
+> network interfaces (`0.0.0.0`), which exposes your dashboard — and the job
+> data in it — to anyone on your local network. Binding to `localhost` keeps it
+> reachable only from your own machine. This is the current security baseline;
+> further hardening is tracked in `TODO.md`.
 
 ## Why this exists
 
@@ -43,7 +52,7 @@ job-hunter-ai/
 
 **Strategy Pattern for scrapers.** `BaseScraper` is an `abc.ABC` with one required method, `.scrape()`. Each job board gets its own subclass. When a site changes its HTML, you fix one file, not the whole pipeline.
 
-**Queue via the database, not asyncio.** Streamlit's threading model doesn't play well with background async workers updating UI state — you end up fighting race conditions for no real benefit at this scale. Instead, the scraper writes rows with `status = "pending_llm"`; a separate CLI script (`make process`) picks those up and generates cover letters/emails; Streamlit only ever reads from the database. Simpler, no race conditions, and closer to how real lightweight pipelines are built.
+**Queue via the database, not asyncio.** Streamlit's threading model doesn't play well with background async workers updating UI state — you end up fighting race conditions for no real benefit at this scale. Instead, the scraper writes rows with no generated materials yet (`generated_cover_letter` is `None`); a separate CLI script (`make process`) selects exactly those rows via `pending_llm_jobs()`, generates cover letters/emails, and writes them back; Streamlit only ever reads from the database. The null column *is* the queue — `status` ("To Apply", "Applied", …) is independent and tracks where you are in the application, not whether materials have been generated. Simpler, no race conditions, and closer to how real lightweight pipelines are built.
 
 **LLM abstraction layer.** `llm/client.py` wraps whatever inference backend you're running (Ollama locally by default) behind one interface, so swapping to Llama.cpp or an OpenAI-compatible API is a config change, not a rewrite.
 
@@ -86,25 +95,54 @@ class JobPost(SQLModel, table=True):
 
 ### Prerequisites
 - Python 3.11+
-- [Ollama](https://ollama.com) installed locally, with a model pulled (e.g. `ollama pull llama3`)
+- [Ollama](https://ollama.com) installed locally, with a model pulled (e.g. `ollama pull llama3.2:3b-instruct-q4_K_M`)
 
 ### Setup
 
 ```bash
 git clone <your-repo-url>
 cd job-hunter-ai
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-cp config.yaml.example config.yaml   # then edit search terms, location, model name
+make setup                          # one-time: creates venv + installs dependencies
+source venv/bin/activate            # Windows: venv\Scripts\activate
+cp config.yaml.example config.yaml  # then edit search terms, llm.model, resume_summary
 ```
+
+`make setup` is the one-time installer — it builds the virtualenv and installs everything into it. It can't activate the venv for your shell (no child process can), so activate it yourself afterwards before running the `make scrape` / `make process` / `make app` steps.
 
 ### Usage
 
 ```bash
 make scrape    # populate data/jobs.db with new postings
 make process   # generate cover letters / cold emails for pending rows
-make app       # launch the Streamlit dashboard
+make app       # launch the Streamlit dashboard (bound to localhost)
 ```
+
+> [!CAUTION]
+> Run the dashboard bound to localhost: `streamlit run src/app/main.py --server.address localhost` (`make app` already does this). See the security caution near the top of this README for why.
+
+### Windows (no `make`)
+
+`make` isn't installed on Windows by default, so the `make ...` shortcuts above won't work in PowerShell or cmd. That's expected — those targets are just thin wrappers around `python -m ...`. The reliable approach on Windows is to create a virtual environment and call its interpreter directly, with no activation step needed.
+
+One-time setup (this example names the venv `job-hunter`):
+
+```powershell
+python -m venv job-hunter
+job-hunter\Scripts\python.exe -m pip install --upgrade pip
+job-hunter\Scripts\python.exe -m pip install -r requirements.txt
+copy config.yaml.example config.yaml   # then edit search terms, llm.model, resume_summary
+```
+
+Then run each step by pointing at the venv's interpreter:
+
+```powershell
+job-hunter\Scripts\python.exe -m src.ingestion.cli      # = make scrape
+job-hunter\Scripts\python.exe -m src.llm.cli            # = make process
+job-hunter\Scripts\streamlit.exe run src\app\main.py --server.address localhost   # = make app
+job-hunter\Scripts\python.exe -m pytest tests\          # = make test
+```
+
+Calling `job-hunter\Scripts\python.exe` directly is equivalent to activating the venv first — activation only adds that folder to your PATH. (If you'd rather activate: `job-hunter\Scripts\Activate.ps1`.)
 
 ### Running tests
 

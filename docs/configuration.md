@@ -52,7 +52,9 @@ If both are present, `sources` wins. If neither is present, validation fails —
 3. `database.url` from `config.yaml`.
 4. The SQLite default, `sqlite:///data/jobs.db`.
 
-Because 2–4 are automatic, the Streamlit app and the LLM worker — which don't set the URL themselves — still pick up a Postgres URL from config or the environment. Pointing the whole pipeline at Postgres is a config change. (Running the suite against a live Postgres, and pinning a driver like `psycopg`, is still on the roadmap.)
+Because 2–4 are automatic, the Streamlit app and the LLM worker — which don't set the URL themselves — still pick up a non-default URL from config or the environment.
+
+**SQLite is the product; Postgres is a documented escape hatch that would need a real test pass before you trusted it.** Pointing the URL at Postgres is a config change and the abstraction (SQLModel/SQLAlchemy) *can* speak it — but that path has never been run here, and no non-SQLite driver (e.g. `psycopg`) is pinned in `requirements.txt`. Treat any non-SQLite URL as open-but-unimplemented: supported by abstraction, unverified in practice. Running the suite against a live Postgres and pinning a driver is tracked in `TODO.md`.
 
 ## Validation
 

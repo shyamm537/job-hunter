@@ -9,9 +9,16 @@ The database URL is resolved lazily, in priority order:
 4. A local SQLite default (`sqlite:///data/jobs.db`).
 
 Because steps 2-4 are automatic, code paths that don't set the URL
-explicitly (the Streamlit app, the LLM worker) still pick up a Postgres
+explicitly (the Streamlit app, the LLM worker) still pick up a non-default
 URL from config or the environment without any changes of their own.
-Swapping SQLite for Postgres is now genuinely a config change.
+
+A note on what's actually supported: SQLite is the product. Postgres (or
+any other backend) is a documented escape hatch that would need a real test
+pass before you trusted it. The engine is built from whatever URL resolves,
+and SQLModel/SQLAlchemy *can* speak Postgres — but that path has never been
+run here and no non-SQLite driver (e.g. psycopg) is pinned. Treat non-SQLite
+URLs as open-but-unimplemented: the wiring won't stop you, the testing
+hasn't happened.
 """
 
 import os
@@ -62,6 +69,9 @@ def get_engine():
     """Return the process-wide engine, building it on first use."""
     global _engine
     if _engine is None:
+        # NOTE: a non-SQLite URL will build an engine here and may even work,
+        # but that path is unverified (see module docstring). SQLite is the
+        # only backend this project actually tests against today.
         _engine = create_engine(_resolve_url(), echo=False)
     return _engine
 
