@@ -1,0 +1,45 @@
+# Copy this file to config.yaml and fill in your own values.
+# config.yaml is gitignored — it's meant to hold your personal search
+# criteria and resume summary, not something you commit.
+
+# ── Where to look ──────────────────────────────────────────────────────────
+# Two ways to declare what gets scraped. Use ONE of them.
+#
+# (a) Legacy single search — one SEEK search. Kept for backward compatibility.
+search:
+  title: "data analyst"        # used to build the SEEK search URL
+  location: "Adelaide"         # e.g. Adelaide, Sydney, Remote
+
+# (b) Preferred: a list of sources. Mix SEEK searches and Greenhouse boards,
+#     run as many as you like in one `make scrape`. If `sources` is present it
+#     takes precedence over the `search` block above.
+#
+# sources:
+#   - type: seek
+#     title: "data analyst"
+#     location: "Adelaide"
+#   - type: seek
+#     title: "data analyst"
+#     location: "Sydney"
+#   - type: greenhouse
+#     board: "stripe"            # the board token in boards.greenhouse.io/stripe
+#     title_contains: "data"     # optional: only keep titles containing this
+
+llm:
+  backend: ollama               # only "ollama" is implemented today
+  model: llama3                 # must be pulled already: `ollama pull llama3`
+  host: http://localhost:11434
+
+# ── Where to store it ──────────────────────────────────────────────────────
+# Optional. Defaults to sqlite:///data/jobs.db. Point at Postgres to scale:
+#   url: "postgresql+psycopg://user:pass@localhost:5432/jobs"
+# Can also be set via the JOBHUNTER_DATABASE_URL environment variable.
+database:
+  url: "sqlite:///data/jobs.db"
+
+resume_summary: >
+  Paste a 3-5 sentence summary of your background, skills, and the kind of
+  role you're targeting. This gets injected into every cover letter and
+  cold email prompt, so keep it factual — the LLM is instructed not to
+  invent experience, but it can only avoid that if you give it real
+  material to work from.
