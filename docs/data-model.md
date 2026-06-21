@@ -15,6 +15,9 @@ class JobPost(SQLModel, table=True):
     status: str = Field(default="To Apply")
     generated_cover_letter: Optional[str] = None
     generated_cold_email: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_confidence: Optional[str] = None
 ```
 
 ## Field reference
@@ -32,6 +35,9 @@ class JobPost(SQLModel, table=True):
 | `status` | `str` | One of `To Apply`, `Applied`, `Interviewing`, `Rejected`. Plain string, not an enum — see "Known looseness" below. |
 | `generated_cover_letter` | `str \| None` | `None` is the queue signal: `pending_llm_jobs()` selects rows where this is null. |
 | `generated_cold_email` | `str \| None` | Generated alongside the cover letter, same LLM call cycle. |
+| `contact_name` | `str \| None` | A contact found in the posting's own text, or `None`. See `docs/hiring-manager-lookup.md`. |
+| `contact_email` | `str \| None` | A published address or a flagged guess — never asserted as verified. `None` if none found. |
+| `contact_confidence` | `str \| None` | `"published"` / `"pattern-guess"` / `"none"`. **Also the queue signal:** `pending_contact_jobs()` selects rows where this is null, so a looked-up row (even a miss, set to `"none"`) leaves the queue. Free-text, like `status`. |
 
 ## Dedup strategy
 

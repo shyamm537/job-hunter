@@ -1,0 +1,42 @@
+# sources.txt — WHERE Job Hunter AI looks. One source per line; titles and
+# locations live in config.yaml's `filters` block, NOT here.
+#
+# Every ATS board below was confirmed live against its public API on 2026-06-20
+# (re-check anytime with `make validate`). They skew REMOTE/global tech, since
+# that's who exposes Greenhouse/Lever public APIs.
+
+# ── SEEK: DISABLED 2026-06-20 ───────────────────────────────────────────────
+# SEEK's public RSS feed now returns 0 jobs for every query (confirmed: all SEEK
+# scrape dumps are empty). The feed it was built on is gone, and the remaining
+# ways to get SEEK data cross the ToS line this project won't (see README ethics
+# + docs/board-discovery.md). Left commented, not deleted, so it's a one-line
+# re-enable if that ever changes. While disabled, `make discover` has no feeder.
+# seek
+
+# ── Greenhouse boards (boards.greenhouse.io/<token>) ────────────────────────
+greenhouse stripe
+greenhouse databricks
+greenhouse datadog
+greenhouse mongodb
+greenhouse cloudflare
+greenhouse twilio
+greenhouse reddit
+greenhouse pinterest
+greenhouse instacart
+greenhouse dropbox
+greenhouse airbnb
+greenhouse lyft
+greenhouse asana
+greenhouse robinhood
+greenhouse affirm
+greenhouse samsara
+greenhouse anthropic
+
+# ── Lever boards (jobs.lever.co/<token>) ────────────────────────────────────
+lever metabase
+lever spotify
+
+# ── Adzuna search (replaces dead SEEK) — uncomment after adding creds to ─────
+# ── config.yaml's `adzuna:` block. Per-country; reaches AU + India. ─────────
+# adzuna au
+# adzuna in

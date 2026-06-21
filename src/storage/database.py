@@ -26,6 +26,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, List, Optional
 
+from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from src.config import DEFAULT_DATABASE_URL
@@ -85,6 +86,33 @@ def init_db() -> None:
     if engine.url.get_backend_name() == "sqlite" and db_path and db_path != ":memory:":
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     SQLModel.metadata.create_all(engine)
+    _migrate_sqlite_columns(engine)
+
+
+# Columns added to JobPost after the table may already exist on disk.
+# create_all() only CREATEs missing tables — it never ALTERs an existing one —
+# so a database written before these columns existed would be missing them and
+# every read would raise. This is a deliberately tiny, additive, SQLite-only
+# migration: it adds any missing nullable columns and nothing else. It is NOT a
+# general migration framework; a real schema change (renames, type changes,
+# non-SQLite backends) still needs proper tooling (see TODO.md).
+_ADDED_COLUMNS = {
+    "contact_name": "TEXT",
+    "contact_email": "TEXT",
+    "contact_confidence": "TEXT",
+}
+
+
+def _migrate_sqlite_columns(engine) -> None:
+    if engine.url.get_backend_name() != "sqlite":
+        return  # Postgres path is unverified anyway (see module docstring).
+    with engine.begin() as conn:
+        existing = {row[1] for row in conn.execute(text("PRAGMA table_info(jobpost)"))}
+        if not existing:
+            return  # table not created yet / unexpected name — nothing to do
+        for name, sqltype in _ADDED_COLUMNS.items():
+            if name not in existing:
+                conn.execute(text(f"ALTER TABLE jobpost ADD COLUMN {name} {sqltype}"))
 
 
 @contextmanager
@@ -124,5 +152,20 @@ def pending_llm_jobs(session: Session) -> List[JobPost]:
     return list(
         session.exec(
             select(JobPost).where(JobPost.generated_cover_letter.is_(None))
+        ).all()
+    )
+
+
+def pending_contact_jobs(session: Session) -> List[JobPost]:
+    """Jobs that haven't been through contact lookup yet.
+
+    The queue for `make contacts`, mirroring pending_llm_jobs(): NULL
+    contact_confidence means "not looked up". The lookup always sets a
+    confidence (including "none" on a miss), so a processed row leaves the
+    queue and isn't retried on every run.
+    """
+    return list(
+        session.exec(
+            select(JobPost).where(JobPost.contact_confidence.is_(None))
         ).all()
     )

@@ -17,9 +17,11 @@ Each layer only talks to the one next to it. `app/main.py` never imports a scrap
 
 `src/ingestion/base_scraper.py` defines `BaseScraper`, an `abc.ABC` with one abstract method: `scrape() -> List[JobPost]`. There are two concrete implementations: `src/ingestion/seek.py` (SEEK public RSS) and `src/ingestion/greenhouse.py` (Greenhouse public board JSON API).
 
-The contract is deliberately thin — a scraper takes whatever constructor args it needs and returns a list of `JobPost` objects. It doesn't talk to the database directly; `src/ingestion/cli.py` owns that. `src/ingestion/factory.py` is the one place that maps a validated config `source` onto the right subclass, so the CLI loops over sources without knowing their concrete types.
+The contract is deliberately thin — a scraper takes whatever constructor args it needs and returns a list of `JobPost` objects. It's a pure fetcher: it doesn't talk to the database, and it doesn't know about filters. `src/ingestion/planner.py` (`plan_scrapes`) is the one place that turns validated `sources` + `filters` into concrete scrapers, so the CLI loops over `PlannedScrape` items without knowing their concrete types. (`src/ingestion/factory.py` is now a thin deprecation shim re-exporting the planner.)
 
-Why this matters in practice: if SEEK changes its RSS feed format, only `seek.py` changes. The Greenhouse scraper is the proof the abstraction actually holds — it's a totally different transport (JSON API vs. RSS), yet `BaseScraper`, the CLI, and the storage layer didn't change shape to absorb it. Adding a third source (see `docs/scrapers.md`) is a new file plus one branch in the factory.
+What you want (titles, locations) is kept separate from where you look (sources), because the two source kinds use the intent differently: SEEK is a search engine, so each `(title, location)` pair becomes one search; an ATS board returns a company's whole list, so the planner marks it for post-filtering by `src/ingestion/filtering.py`.
+
+Why this matters in practice: if SEEK changes its RSS feed format, only `seek.py` changes. The Greenhouse and Lever scrapers prove the abstraction holds — totally different transports (JSON APIs vs. RSS), yet `BaseScraper`, the CLI, and storage didn't change shape to absorb them. Adding a source (see `docs/scrapers.md`) is a new file, a config model, and one branch in the planner.
 
 ### 2. Database-backed queue instead of asyncio
 
@@ -41,7 +43,9 @@ Today `backend: ollama` is the only valid value — anything else raises `ValueE
 
 ## Data flow, end to end
 
-1. `make scrape` → for each source in config, `factory.build_scraper()` returns the right `BaseScraper` (`SeekScraper` parses SEEK's RSS, `GreenhouseScraper` hits the Greenhouse board API) → `upsert_job()` dedupes against `job_board_id` and inserts new rows. One source failing is logged and skipped, not fatal.
+![Architecture Flowchart](image.png)
+
+1. `make scrape` → `plan_scrapes(sources, filters)` expands SEEK sources into one search per `(title, location)` and marks ATS boards for post-filtering → each planned scrape runs, ATS results are filtered by `job_matches()` → `upsert_job()` dedupes against `job_board_id` and inserts new rows. One planned scrape failing is logged and skipped, not fatal.
 2. `make process` → `pending_llm_jobs()` finds rows with no cover letter → `OllamaClient.generate()` is called twice per job (cover letter, cold email) using templates from `src/llm/prompts.py` → results written back to the same row.
 3. `make app` → Streamlit reads all rows, renders one expander per job, lets you change `status` inline.
 

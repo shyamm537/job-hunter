@@ -57,6 +57,27 @@ else:
             st.write(f"**Location:** {job.location}")
             st.write(f"**Source URL:** {job.url}")
 
+            # Contact lookup result. Always show the confidence so a guessed
+            # address is never mistaken for a verified one (see
+            # docs/hiring-manager-lookup.md).
+            if job.contact_email:
+                who = f" ({job.contact_name})" if job.contact_name else ""
+                if job.contact_confidence == "pattern-guess":
+                    st.warning(
+                        f"**Candidate contact:** {job.contact_email}{who} — "
+                        "**guessed** from the company email pattern, unverified. "
+                        "Check before sending."
+                    )
+                else:
+                    st.write(
+                        f"**Contact:** {job.contact_email}{who}  "
+                        f"·  _{job.contact_confidence}_"
+                    )
+            elif job.contact_name:
+                st.write(f"**Contact name:** {job.contact_name} (no email found)")
+            elif job.contact_confidence is None:
+                st.caption("Contact lookup not run yet — run `make contacts`.")
+
             new_status = st.selectbox(
                 "Status",
                 STATUSES,

@@ -15,7 +15,11 @@ import sys
 
 from src.config import ConfigError, load_config
 from src.llm.client import get_llm_client
-from src.llm.prompts import COLD_EMAIL_TEMPLATE, COVER_LETTER_TEMPLATE
+from src.llm.prompts import (
+    COLD_EMAIL_TEMPLATE,
+    COVER_LETTER_TEMPLATE,
+    cold_email_greeting,
+)
 from src.logging_config import setup_logging
 from src.storage.database import (
     get_session,
@@ -54,6 +58,7 @@ def main() -> None:
                 company=job.company,
                 description=job.description,
                 resume_summary=resume_summary,
+                greeting=cold_email_greeting(job.contact_name),
             )
             job.generated_cover_letter = client.generate(
                 COVER_LETTER_TEMPLATE.format(**fmt_kwargs)
