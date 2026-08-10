@@ -20,7 +20,7 @@ have less to work with than on the ATS boards. That's a property of the API.
 
 import hashlib
 from typing import List, Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from src.ingestion.base_scraper import BaseScraper
 from src.ingestion.http_util import get_json
@@ -49,6 +49,70 @@ COUNTRY_OF = {
 def country_of(location: str) -> Optional[str]:
     """Adzuna country code for a location, or None if region-agnostic/unknown."""
     return COUNTRY_OF.get((location or "").strip().lower())
+
+
+def _hash(value: str) -> str:
+    """`adzuna-<sha1(value)[:10]>` — the shared `<source>-<hash>` id shape used
+    by every scraper (see src/ingestion/*), so the source prefix and id length
+    stay uniform regardless of which input we hashed."""
+    return f"adzuna-{hashlib.sha1(value.encode()).hexdigest()[:10]}"
+
+
+def id_dedup_key(ad_id: str) -> str:
+    """Preferred dedup id: hash of Adzuna's own primary key (`id`).
+
+    `id` is stable regardless of which search surfaced the ad and doesn't depend
+    on the redirect URL's shape, so it's the robust dedup key. We hash it (rather
+    than use it raw) purely so the id format matches the other scrapers'.
+    """
+    return _hash(str(ad_id))
+
+
+def url_dedup_key(redirect_url: str) -> str:
+    """Fallback dedup id from an Adzuna redirect URL (used when `id` is absent).
+
+    Adzuna's redirect_url carries per-search tracking params (se, utm_*, v, ...)
+    in the query string, so the SAME ad surfaced under two location-alias
+    searches (e.g. 'bangalore' vs 'bengaluru', if both are ever queried) comes
+    back with different URLs and would otherwise hash to two different ids. The
+    job's identity lives in the PATH (.../land/ad/<id>), so we hash
+    scheme+host+path only, dropping query and fragment, so those duplicates
+    collapse to one job_board_id. The full URL is still stored on the JobPost.
+
+    This is also the *legacy* key scheme: rows scraped before the switch to
+    `id` are keyed this way, which is how the one-time re-key migration
+    (src/storage/database.py) recognizes them.
+    """
+    parts = urlsplit(redirect_url)
+    canonical = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+    return _hash(canonical)
+
+
+def adzuna_id_from_url(redirect_url: str) -> Optional[str]:
+    """Extract Adzuna's ad id from a redirect URL path (`.../land/ad/<id>`).
+
+    Returns None if the path doesn't carry one. Only used by the legacy->id
+    dedup-key migration, which has the stored URL but not the original `id`.
+    """
+    parts = [p for p in urlsplit(redirect_url).path.split("/") if p]
+    for i in range(len(parts) - 2):
+        if parts[i] == "land" and parts[i + 1] == "ad":
+            return parts[i + 2]
+    return None
+
+
+def dedup_key(entry: dict) -> str:
+    """Stable per-job dedup id for one Adzuna search result.
+
+    Prefer Adzuna's own `id` (parse-free and independent of the redirect URL's
+    shape); fall back to hashing the URL path when `id` is missing or empty.
+    Belt-and-suspenders: the fallback keeps dedup working even if a result ever
+    omits `id`, and it complements rather than replaces the URL normalization.
+    """
+    ad_id = str(entry.get("id") or "").strip()
+    if ad_id:
+        return id_dedup_key(ad_id)
+    return url_dedup_key(entry.get("redirect_url", ""))
 
 
 class AdzunaScraper(BaseScraper):
@@ -92,7 +156,7 @@ class AdzunaScraper(BaseScraper):
             results = data.get("results", []) if isinstance(data, dict) else []
             for entry in results:
                 url = entry.get("redirect_url", "")
-                job_board_id = f"adzuna-{hashlib.sha1(url.encode()).hexdigest()[:10]}"
+                job_board_id = dedup_key(entry)
                 company = (entry.get("company") or {}).get("display_name", "Unknown")
                 location = (entry.get("location") or {}).get("display_name", "")
                 jobs.append(

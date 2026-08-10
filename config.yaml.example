@@ -44,6 +44,9 @@ llm:
   backend: ollama               # only "ollama" is implemented today
   model: llama3                 # must be pulled already: `ollama pull llama3`
   host: http://localhost:11434
+  batch_size: 0                 # max jobs per `make process` run; 0 = whole queue
+  max_retries: 2                # extra tries after the first on a failed LLM call
+  retry_backoff: 1.0            # base seconds; waits retry_backoff * 2**attempt
 
 # ── Adzuna search API (optional) ────────────────────────────────────────────
 # Sanctioned job-search API with a free tier; per-country (au, in, gb, ...), so

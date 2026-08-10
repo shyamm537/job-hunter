@@ -142,6 +142,29 @@ class LLMConfig(BaseModel):
     host: str = DEFAULT_OLLAMA_HOST
     api_key: Optional[str] = None
 
+    # Max pending jobs to process per `make process` run. 0 (the default)
+    # means no limit — drain the whole queue. A positive value bounds an
+    # unattended/cron run so it stops after a fixed number of jobs and frees
+    # the GPU. Interactive runs don't need it: each job commits independently,
+    # so Ctrl-C never loses finished work.
+    batch_size: int = 0
+
+    # Retry policy for transient LLM-call failures (e.g. Ollama briefly
+    # unreachable mid-run). `max_retries` is *additional* attempts after the
+    # first, so 2 means up to 3 tries. Backoff is exponential:
+    # retry_backoff * 2**attempt seconds between tries (0 disables the wait).
+    max_retries: int = 2
+    retry_backoff: float = 1.0
+
+    @model_validator(mode="after")
+    def _non_negative(self) -> "LLMConfig":
+        for name in ("batch_size", "max_retries"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be >= 0")
+        if self.retry_backoff < 0:
+            raise ValueError("retry_backoff must be >= 0")
+        return self
+
 
 class AdzunaConfig(BaseModel):
     """Adzuna API credentials (free tier: register at developer.adzuna.com).

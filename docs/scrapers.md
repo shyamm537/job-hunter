@@ -29,7 +29,7 @@ SEEK (`au.seek.com`) covers **Australia/NZ only**, so it can only search AU/NZ
 locations. A `seek` source therefore accepts an optional `locations:` to scope
 its searches (defaulting to `filters.locations`). Other regions — e.g. India —
 are covered by ATS boards + the global location filter, not SEEK, because no
-public-feed SEEK equivalent exists there (see `docs/configuration.md`).
+public-feed SEEK equivalent exists there (see [`docs/configuration.md`](./configuration.md)).
 
 ## Worked example 2: `GreenhouseScraper`
 
@@ -70,7 +70,11 @@ well as Australia (`au`). Like SEEK it's a *search* source (`post_filter=False`)
 the planner expands `titles × locations` into queries, pairing each location with
 its country via `country_of()` (Adelaide→au, Mumbai→in) so it doesn't query the
 wrong index. Credentials come from the top-level `adzuna:` config block, threaded
-through `plan_scrapes(..., adzuna_auth=...)`. Two honest limits: it needs an API
+through `plan_scrapes(..., adzuna_auth=...)`. Its `job_board_id` is built from a
+*normalized* redirect URL — `_dedup_key()` hashes scheme+host+path only, dropping
+the per-search query string (`se`/`utm_*`/`where`) so the same ad fetched under
+two different searches collapses to one row instead of N (see
+[`docs/data-model.md`](./data-model.md)). Two honest limits: it needs an API
 key (config.yaml becomes sensitive — already gitignored), and the API returns
 only a description *snippet*, so generated materials/contacts have less to chew on.
 

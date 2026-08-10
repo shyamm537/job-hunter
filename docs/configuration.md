@@ -45,32 +45,32 @@ clean and uniform — a source is purely "where".
   drop remote roles. (See `src/ingestion/filtering.py`.)
 - SEEK is never post-filtered; its search query already did the filtering.
 
-### Regions: SEEK is AU/NZ, ATS is global
+### Regions: Adzuna searches AU + India, ATS is global
 
-SEEK (`au.seek.com`) only covers Australia/New Zealand, so it can only *search*
-AU/NZ locations. ATS boards (Greenhouse/Lever/Ashby) are different: they return
-a company's whole global list, and `filters.locations` keeps the ones you want.
+The live search source is **Adzuna** (SEEK's public RSS is dead). Adzuna is
+per-country, so it *searches* both Australia (`au`) and India (`in`) — the
+planner pairs each location with its country index via `country_of()`. ATS
+boards (Greenhouse/Lever/Ashby) are different: they return a company's whole
+global list, and `filters.locations` keeps the ones you want.
 
-That's how you cover other regions — e.g. **India**: put your Indian cities
-(`"Bangalore"`, `"Mumbai"`, plus `"Remote"`) in `filters.locations`, add
-India-hiring company boards as `greenhouse`/`lever`/`ashby` sources, and those
-postings come through the location filter. To stop SEEK from running pointless
-searches for non-AU cities, give the seek source its own AU/NZ `locations`:
+So **India** is covered two ways: Adzuna's `in` index searches Indian cities
+directly, *and* India-hiring ATS boards come through the location filter. Use
+**canonical city names** in `filters.locations` — `country_of()` recognizes both
+spellings, but listing both (`"Bengaluru"` *and* `"Bangalore"`) just makes Adzuna
+run the same city twice and burn double the API quota. Pick one:
 
 ```yaml
 filters:
   titles: ["data analyst"]
-  locations: ["Adelaide", "Bangalore", "Remote"]   # ATS filter (all regions)
+  locations: ["Adelaide", "Bengaluru", "Mumbai", "Remote"]
 sources:
-  - type: seek
-    locations: ["Adelaide"]        # SEEK searches AU/NZ only
-  - type: greenhouse
-    board: "some-india-hiring-company"
+  - adzuna au      # searches Australian locations
+  - adzuna in      # searches Indian locations
+  - greenhouse some-india-hiring-company
 ```
 
-There is no clean, public-feed equivalent of SEEK for India (Naukri/Indeed have
-no public RSS/API — only ToS-violating scrapers), so India coverage is ATS +
-the location filter by design. See `TODO.md`.
+(SEEK is AU/NZ-only and dead anyway; if its feed ever returns, a `seek` source
+takes an optional `locations:` to scope *its* searches to AU/NZ. See `TODO.md`.)
 
 ## Sources file
 

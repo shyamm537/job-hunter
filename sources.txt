@@ -38,5 +38,5 @@ lever spotify
 
 # ── Adzuna search (replaces dead SEEK) — uncomment after adding creds to ─────
 # ── config.yaml's `adzuna:` block. Per-country; reaches AU + India. ─────────
-# adzuna au
-# adzuna in
+adzuna au
+adzuna in

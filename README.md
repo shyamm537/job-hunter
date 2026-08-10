@@ -2,7 +2,7 @@
 
 A local-first job application pipeline: discover and scrape postings across SEEK, Adzuna, and ATS boards (Greenhouse, Lever, Ashby), store them in a database, look up a public contact for each posting, generate tailored cover letters and cold emails with a local LLM, and track application status — all from a Streamlit dashboard.
 
-No cloud dependency required. Runs on SQLite + Ollama by default. SQLite is the product; Postgres is a documented escape hatch that would need a real test pass before you trusted it (the URL is configurable and the abstraction can speak Postgres, but that path is unverified and no driver is pinned — see `docs/configuration.md` and `TODO.md`). A hosted LLM is likewise an open, not-yet-built option.
+No cloud dependency required. Runs on SQLite + Ollama by default. SQLite is the product; Postgres is a documented escape hatch that would need a real test pass before you trusted it (the URL is configurable and the abstraction can speak Postgres, but that path is unverified and no driver is pinned — see [`docs/configuration.md`](docs/configuration.md) and `TODO.md`). A hosted LLM is likewise an open, not-yet-built option.
 
 > [!CAUTION]
 > **Always run the dashboard bound to localhost.** Launch Streamlit as
@@ -87,9 +87,9 @@ Out of scope:
 - Bypassing bot detection or CAPTCHAs
 - Data-broker / email-finder APIs for the contact lookup (see below)
 
-**SEEK's public RSS feed is dead** (confirmed: it returns zero results for every query as of 2026-06-20). It's left in the codebase — `src/ingestion/seek.py` still works against the feed format, and a `seek` source is still a one-line re-enable in `sources.txt` if the feed ever comes back — but it is **not** a working source right now. Treat any documentation that describes SEEK as a live source as describing intent, not current behavior. **Adzuna** (`src/ingestion/adzuna.py`) replaces it as the search/aggregator source: it's a sanctioned API with a free tier, reaches India as well as Australia, and just needs free credentials from developer.adzuna.com in `config.yaml`'s `adzuna:` block. See `docs/configuration.md` and `docs/scrapers.md`.
+**SEEK's public RSS feed is dead** (confirmed: it returns zero results for every query as of 2026-06-20). It's left in the codebase — `src/ingestion/seek.py` still works against the feed format, and a `seek` source is still a one-line re-enable in `sources.txt` if the feed ever comes back — but it is **not** a working source right now. Treat any documentation that describes SEEK as a live source as describing intent, not current behavior. **Adzuna** (`src/ingestion/adzuna.py`) replaces it as the search/aggregator source: it's a sanctioned API with a free tier, reaches India as well as Australia, and just needs free credentials from developer.adzuna.com in `config.yaml`'s `adzuna:` block. See `docs/configuration.md` and [`docs/scrapers.md`](docs/scrapers.md).
 
-The **contact lookup** (`make contacts`, below) follows the same ethic: it reads only text a company already published in its own posting, makes no network calls, and never queries a data broker (Hunter, Apollo, RocketReach, ZoomInfo, etc.) or a logged-in source. A guessed address is always flagged as a guess, never asserted as verified. See `docs/hiring-manager-lookup.md`.
+The **contact lookup** (`make contacts`, below) follows the same ethic: it reads only text a company already published in its own posting, makes no network calls, and never queries a data broker (Hunter, Apollo, RocketReach, ZoomInfo, etc.) or a logged-in source. A guessed address is always flagged as a guess, never asserted as verified. See [`docs/hiring-manager-lookup.md`](docs/hiring-manager-lookup.md).
 
 If you fork this and add a scraper or contact source that requires login or a broker API, that's your decision and your risk — document it clearly in your own README rather than relying on this one.
 
@@ -113,7 +113,7 @@ class JobPost(SQLModel, table=True):
     contact_confidence: Optional[str] = None  # "published" | "pattern-guess" | "none"
 ```
 
-`job_board_id` is unique so re-running a scrape doesn't duplicate postings. The three `contact_*` columns are additive — `src/storage/database.py` adds them to an existing SQLite file on first run after upgrading, no manual migration needed. Full field-by-field notes: `docs/data-model.md`.
+`job_board_id` is unique so re-running a scrape doesn't duplicate postings. The three `contact_*` columns are additive — `src/storage/database.py` adds them to an existing SQLite file on first run after upgrading, no manual migration needed. Full field-by-field notes: [`docs/data-model.md`](docs/data-model.md).
 
 ## Getting started
 
@@ -146,7 +146,7 @@ make process   # generate cover letters / cold emails for pending rows
 make app       # launch the Streamlit dashboard (bound to localhost)
 ```
 
-`validate` and `discover` are maintenance/growth steps, not required every run — see `docs/board-discovery.md` for how they fit together (curate candidates → validate → scrape; mine existing results → discover → review → validate). `contacts` is optional but should run before `process` if you want the cold email addressed to someone. On Windows, `run-pipeline.ps1` runs all six steps in order in one go (with `-SkipApp` to stop before the dashboard).
+`validate` and `discover` are maintenance/growth steps, not required every run — see [`docs/board-discovery.md`](docs/board-discovery.md) for how they fit together (curate candidates → validate → scrape; mine existing results → discover → review → validate). `contacts` is optional but should run before `process` if you want the cold email addressed to someone. On Windows, `run-pipeline.ps1` runs all six steps in order in one go (with `-SkipApp` to stop before the dashboard).
 
 > [!CAUTION]
 > Run the dashboard bound to localhost: `streamlit run src/app/main.py --server.address localhost` (`make app` already does this). See the security caution near the top of this README for why.
@@ -189,23 +189,23 @@ pytest tests/
 
 This is being built incrementally. Rough sequence:
 
-1. `JobPost` schema + SQLite storage ✅
-2. One working scraper (SEEK public feed) implementing `BaseScraper` — ✅ built, but the feed itself has since gone dead (see "Scraping: scope and ethics")
-3. LLM client wrapper + cover letter / cold email prompt templates ✅
-4. `make process` queue consumer ✅
-5. Streamlit dashboard (read-only view + status updates) ✅
-6. Second scraper (Greenhouse public board API) to prove the Strategy Pattern decouples cleanly ✅
-7. CI workflow (lint + pytest on push) ✅
-8. Pydantic-validated config + multi-source/multi-search support ✅
-9. `database.url` wired through (SQLite default, Postgres via config or `JOBHUNTER_DATABASE_URL`) ✅
-10. `filters` / `sources` split + `sources_file` (plain-text board list, careers-URL auto-detection) ✅
-11. Lever and Ashby scrapers — third and fourth ATS sources ✅
-12. Adzuna scraper — sanctioned search API replacing the dead SEEK feed, reaches AU + India ✅
-13. Board validation (`make validate`) and discovery (`make discover`) — keep the board list live and growing without a noise-adding firehose ✅
-14. Hiring-contact lookup v1 (`make contacts`) — public, in-posting-text only; shown with a confidence flag in the dashboard ✅
-15. `capture`/`JOBHUNTER_DUMP_DIR` debug dumping of unfiltered scrape output ✅
+1. `JobPost` schema + SQLite storage (done)
+2. One working scraper (SEEK public feed) implementing `BaseScraper` — built, but the feed itself has since gone dead (see "Scraping: scope and ethics")
+3. LLM client wrapper + cover letter / cold email prompt templates (done)
+4. `make process` queue consumer (done)
+5. Streamlit dashboard (read-only view + status updates) (done)
+6. Second scraper (Greenhouse public board API) to prove the Strategy Pattern decouples cleanly (done)
+7. CI workflow (lint + pytest on push) (done)
+8. Pydantic-validated config + multi-source/multi-search support (done)
+9. `database.url` wired through (SQLite default, Postgres via config or `JOBHUNTER_DATABASE_URL`) (done)
+10. `filters` / `sources` split + `sources_file` (plain-text board list, careers-URL auto-detection) (done)
+11. Lever and Ashby scrapers — third and fourth ATS sources (done)
+12. Adzuna scraper — sanctioned search API replacing the dead SEEK feed, reaches AU + India (done)
+13. Board validation (`make validate`) and discovery (`make discover`) — keep the board list live and growing without a noise-adding firehose (done)
+14. Hiring-contact lookup v1 (`make contacts`) — public, in-posting-text only; shown with a confidence flag in the dashboard (done)
+15. `capture`/`JOBHUNTER_DUMP_DIR` debug dumping of unfiltered scrape output (done)
 
-A hosted-LLM config and resume parsing are still deferred — the LLM layer is intentionally left at one backend (Ollama) for now. A Workday scraper is designed but not built (`docs/workday.md`) — it's a multi-call, POST-based ATS unlike the others, and needs a live-board spike before it's trusted. See `docs/roadmap.md` for the detailed version and `TODO.md` for the working tracker.
+A hosted-LLM config and resume parsing are still deferred — the LLM layer is intentionally left at one backend (Ollama) for now. A Workday scraper is designed but not built ([`docs/workday.md`](docs/workday.md)) — it's a multi-call, POST-based ATS unlike the others, and needs a live-board spike before it's trusted. See [`docs/roadmap.md`](docs/roadmap.md) for the detailed version and `TODO.md` for the working tracker.
 
 ## Documentation
 

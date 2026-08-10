@@ -16,7 +16,7 @@ contact for a posting so the cold email is actually targeted rather than
 theoretical.
 
 The catch is that the goal sits in tension with the project's own ethic
-(`docs/scrapers.md` → "Scope"): **public, non-authenticated sources only; no
+([`docs/scrapers.md`](./scrapers.md) → "Scope"): **public, non-authenticated sources only; no
 login, no anti-bot bypass.** That ethic is what rules out a `LinkedInScraper`,
 and it rules out most of what would make this feature *easy*:
 
@@ -87,7 +87,7 @@ candidate framing exist so the UI and the user never treat a guess as a fact.
 
 Three nullable columns on `JobPost` (`src/storage/models.py`) — additive, no
 change to existing rows, consistent with the single-table model in
-`docs/data-model.md`:
+[`docs/data-model.md`](./data-model.md):
 
 ```python
 contact_name: Optional[str] = None        # e.g. "Dana Lee", or None
@@ -106,7 +106,7 @@ same reasoning that's keeping `GeneratedMaterial` unbuilt.
 
 ## Where it plugs into the pipeline
 
-The architecture (`docs/architecture.md`) is `ingestion → storage → llm → app`,
+The architecture ([`docs/architecture.md`](./architecture.md)) is `ingestion → storage → llm → app`,
 with the database as the queue between stages. The lookup is a **new stage
 between scrape and process**, queue-driven the same way `make process` is:
 

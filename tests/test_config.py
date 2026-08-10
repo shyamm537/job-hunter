@@ -1,6 +1,7 @@
 import textwrap
 
 import pytest
+from pydantic import ValidationError
 
 from src.config import (
     DEFAULT_DATABASE_URL,
@@ -99,6 +100,30 @@ def test_llm_allows_unknown_keys():
         {"search": {"title": "x"}, "llm": {"backend": "future", "temperature": 0.7}}
     )
     assert cfg.llm.backend == "future"
+
+
+def test_llm_batch_and_retry_defaults():
+    cfg = Config.model_validate({"search": {"title": "x"}})
+    assert cfg.llm.batch_size == 0  # 0 = unbounded
+    assert cfg.llm.max_retries == 2
+    assert cfg.llm.retry_backoff == 1.0
+
+
+def test_llm_accepts_positive_batch_and_retry():
+    cfg = Config.model_validate(
+        {"search": {"title": "x"}, "llm": {"batch_size": 20, "max_retries": 5}}
+    )
+    assert cfg.llm.batch_size == 20
+    assert cfg.llm.max_retries == 5
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [{"batch_size": -1}, {"max_retries": -1}, {"retry_backoff": -0.5}],
+)
+def test_llm_rejects_negative_values(bad):
+    with pytest.raises(ValidationError):
+        Config.model_validate({"search": {"title": "x"}, "llm": bad})
 
 
 def test_empty_filters_default():

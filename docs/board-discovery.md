@@ -30,7 +30,7 @@ make validate                  # checks everything your config resolves
 
 Workday boards are **manual-only** for now: their data-center subdomain (`wd5`)
 isn't derivable from a name, so they can only be added from a pasted careers URL
-once the Workday scraper exists (see `docs/workday.md`).
+once the Workday scraper exists (see [`docs/workday.md`](./workday.md)).
 
 ## 2. Discovery from your SEEK results (`make discover`)
 

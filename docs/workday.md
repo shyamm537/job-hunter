@@ -101,12 +101,12 @@ ATS boards. Nothing in `base_scraper.py` or `cli.py` changes.
   on title/location, which the list response *has* — so we can filter *before*
   paying for descriptions. That's the efficient ordering.)
 - **Rate limiting.** This is the first scraper that genuinely needs a throttle
-  (`docs/scrapers.md` notes none exists yet). A per-request delay + the existing
+  ([`docs/scrapers.md`](./scrapers.md) notes none exists yet). A per-request delay + the existing
   backoff is the minimum; Workday tenants can be touchy about burst traffic.
 - **Data-center discovery.** Since `wd5` isn't derivable from the company name,
   Workday boards can only be added from a **pasted careers URL**, never from a
   bare name. This directly limits how much of the discovery automation
-  (`docs/board-discovery.md`) can reach Workday — name→token guessing can't work
+  ([`docs/board-discovery.md`](./board-discovery.md)) can reach Workday — name→token guessing can't work
   for it. Worth stating plainly: Workday boards are a manual-add path.
 - **Field-shape verification** (above) — a one-board spike on your machine is the
   first concrete step, before any of this is written.
