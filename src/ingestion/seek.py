@@ -25,7 +25,7 @@ class SeekScraper(BaseScraper):
     def _feed_url(self) -> str:
         query = self.search_terms.strip().replace(" ", "-").lower()
         loc = self.location.strip().replace(" ", "-").lower()
-        return f"https://au.seek.com/{query}-jobs/in-{loc}?rss=true"
+        return f"https://www.seek.com.au/{query}-jobs/in-{loc}?rss=true"
 
     def scrape(self) -> List[JobPost]:
         feed = feedparser.parse(self._feed_url())

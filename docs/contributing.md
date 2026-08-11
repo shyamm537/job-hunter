@@ -17,8 +17,8 @@ Both also run in CI (`.github/workflows/ci.yml`) on push/PR to `main`. A PR with
 
 ## Code conventions (as currently followed, not formally written down elsewhere)
 
-- New scrapers subclass `BaseScraper` and live in `src/ingestion/` — see [`docs/scrapers.md`](./scrapers.md).
-- New LLM backends subclass `LLMClient` and live in `src/llm/client.py` — see [`docs/llm-providers.md`](./llm-providers.md).
+- New scrapers subclass `BaseScraper` and live in `src/ingestion/` — see `docs/scrapers.md`.
+- New LLM backends subclass `LLMClient` and live in `src/llm/client.py` — see `docs/llm-providers.md`.
 - Database access goes through `src/storage/database.py`; nothing outside that module should construct a `Session` directly.
 - No print-based logging beyond what already exists in the CLI scripts — there's no structured logging setup yet (see "(TODO)" below).
 
