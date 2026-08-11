@@ -11,3 +11,5 @@ config.yaml
 
 .env
 .streamlit/
+
+sources.txt
