@@ -1,7 +1,8 @@
-"""Deprecated shim. Scraper selection moved to src/ingestion/planner.py when
-sources and filters were split. Import `plan_scrapes` / `PlannedScrape` from
-planner instead. (This file is kept only because it can't be removed here;
-`git rm src/ingestion/factory.py` to drop it for good.)
+"""Maps a validated config source onto a concrete scraper.
+
+This is the one place that knows which `type` string corresponds to which
+`BaseScraper` subclass. Adding a third source means adding a branch here
+and a config model in `src/config.py` — nothing in the CLI changes.
 """
 
 from src.config import Source

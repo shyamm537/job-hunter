@@ -9,7 +9,6 @@ This is placeholder documentation scaffolded against the current state of the co
 | [`scrapers.md`](./scrapers.md) | `BaseScraper` contract, the `SeekScraper` worked example, scraping scope/ethics, how to add a new source |
 | [`llm-providers.md`](./llm-providers.md) | `LLMClient` contract, `OllamaClient`, prompt templates, how to add a new backend |
 | [`configuration.md`](./configuration.md) | Every `config.yaml` field, what's actually wired up vs. documented-only |
-| [`submitting.md`](./submitting.md) | Manual application submission, per ATS (Greenhouse, Lever, Ashby, Workday, SEEK, …) — what to expect, time, gotchas |
 | [`roadmap.md`](./roadmap.md) | Detailed status per step, open questions not yet resolved |
 | [`contributing.md`](./contributing.md) | Local setup, lint/test commands, conventions — draft, untested by an outside contributor |
 
