@@ -22,3 +22,12 @@ class JobPost(SQLModel, table=True):
     status: str = Field(default="To Apply")  # To Apply, Applied, Interviewing, Rejected
     generated_cover_letter: Optional[str] = None
     generated_cold_email: Optional[str] = None
+
+    # Contact lookup (see docs/hiring-manager-lookup.md). All nullable; populated
+    # by `make contacts`, never asserted as verified. contact_confidence doubles
+    # as the queue signal — NULL means "not looked up yet".
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    # "published" | "pattern-guess" | "none" (set even on a miss, so the row
+    # leaves the queue). Free-text for now, like `status` — see docs/data-model.md.
+    contact_confidence: Optional[str] = None
