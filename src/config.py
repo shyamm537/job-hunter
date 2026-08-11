@@ -113,18 +113,6 @@ class AdzunaSource(BaseModel):
         return self
 
 
-# class AshbySource(BaseModel):
-#     """An Ashby job board. `board` is the public board token, e.g. the
-#     `board` in `api.ashbyhq.com/posting-api/job-board/{board}`. See
-#     `src/ingestion/ashby.py`."""
-#     type: Literal["ashby"]
-#     board: str
-#     # Optional client-side filter: only keep postings whose title contains
-#     # this substring (case-insensitive). Greenhouse boards list every open
-#     # role at a company, so this is usually wanted.
-#     title_contains: Optional[str] = None
-
-
 # Discriminated union: Pydantic picks the model by the `type` field.
 Source = Annotated[
     Union[SeekSource, GreenhouseSource, LeverSource, AshbySource, AdzunaSource],
