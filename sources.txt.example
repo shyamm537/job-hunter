@@ -1,0 +1,35 @@
+# Job Hunter AI — sources file (copy to sources.txt, point config.yaml's
+# `sources_file:` at it). One source per line. Blank lines and #-comments
+# ignored. Titles and locations are NOT here — they live in the `filters`
+# block in config.yaml. These lines only say WHERE to look.
+#
+# This file is MERGED with config.yaml's inline `sources:` (appended, not
+# synced) — you don't keep the two in step; a board in either place is scraped.
+# Only read if config.yaml has a `sources_file:` line pointing here; without
+# that pointer, this file is ignored no matter what it contains.
+#
+#   seek                 # a SEEK search, driven by filters
+#   adzuna <country>     # an Adzuna search (au, in, ...); needs adzuna: creds
+#   greenhouse <token>   # an ATS board, by company token
+#   lever <token>
+#   ashby <token>
+#
+# Or just paste the board's careers URL — the type + token are auto-detected:
+#   https://boards.greenhouse.io/<token>      # → greenhouse <token>
+#   https://job-boards.greenhouse.io/<token>  # newer Greenhouse host
+#   https://jobs.lever.co/<token>             # → lever <token>
+#   https://jobs.ashbyhq.com/<token>          # → ashby <token>
+
+seek
+adzuna au
+adzuna in
+greenhouse stripe
+greenhouse airbnb
+lever figma
+lever ramp
+ashby ashby
+
+# Same boards, pasted as URLs instead (scheme optional, deep links fine):
+# https://boards.greenhouse.io/stripe
+# https://jobs.lever.co/metabase
+# https://jobs.ashbyhq.com/ramp
