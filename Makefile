@@ -1,4 +1,4 @@
-.PHONY: setup scrape validate discover contacts process app test lint
+.PHONY: setup scrape process app test lint
 
 # venv binary dir differs by OS (Windows uses Scripts/, POSIX uses bin/)
 ifeq ($(OS),Windows_NT)

@@ -13,179 +13,80 @@ class BaseScraper(ABC):
         ...
 ```
 
-A scraper takes whatever it needs in `__init__` and returns a list of
-`JobPost` objects. It does **not** touch the database, and it does **not** know
-about filters — it's a pure fetcher. Selecting and filtering happen above it
-(see "Sources, filters, and the planner").
+That's the entire interface. A scraper:
+
+- Takes whatever it needs in `__init__` (search terms, location, a board token — though see the scope note below)
+- Returns a list of fully-formed `JobPost` objects
+- Does **not** touch the database — `src/ingestion/cli.py` owns calling `upsert_job()`
+- Sets `source_name` so logging and `job_board_id` prefixes are traceable to a source
 
 ## Worked example 1: `SeekScraper`
 
-`src/ingestion/seek.py`. Builds a SEEK public RSS search URL from a `search_terms`
-and `location`, parses it with `feedparser`, maps RSS fields onto `JobPost`, and
-builds `job_board_id` as `f"seek-{sha1(url)[:10]}"`. It's a search: it takes one
-title + one location and returns matching postings. No login, no anti-bot bypass.
+`src/ingestion/seek.py`. It:
 
-SEEK (`au.seek.com`) covers **Australia/NZ only**, so it can only search AU/NZ
-locations. A `seek` source therefore accepts an optional `locations:` to scope
-its searches (defaulting to `filters.locations`). Other regions — e.g. India —
-are covered by ATS boards + the global location filter, not SEEK, because no
-public-feed SEEK equivalent exists there (see [`docs/configuration.md`](./configuration.md)).
+1. Builds a SEEK public RSS search URL from `search_terms` and `location`
+2. Parses it with `feedparser`
+3. Builds `job_board_id` as `f"seek-{sha1(url)[:10]}"` so re-scraping the same listing is idempotent
+4. Maps RSS fields (`title`, `author`, `summary`, `link`) onto `JobPost` fields
+
+It does not log in, does not use Playwright, and does not attempt to bypass any bot detection — see the scope note below.
 
 ## Worked example 2: `GreenhouseScraper`
 
-`src/ingestion/greenhouse.py`. The first ATS source. Hits the public boards API
-`https://boards-api.greenhouse.io/v1/boards/<board>/jobs?content=true` (the
-`stripe` in `boards.greenhouse.io/stripe`) and maps the JSON onto `JobPost`. It
-returns the company's **whole** board — filtering by title/location happens
-afterwards (see the planner). It's a JSON API, not RSS, yet `BaseScraper`, the
-CLI, and storage didn't change to absorb it. That's the abstraction holding.
+`src/ingestion/greenhouse.py`. This is the second scraper, and its whole reason for existing is to prove the Strategy Pattern actually decouples — a SEEK-only project never tests the abstraction, it just gives it something to wrap. Greenhouse is a deliberately *different* shape from SEEK:
 
-## Worked example 3: `LeverScraper`
+1. Hits the public Greenhouse boards JSON API: `https://boards-api.greenhouse.io/v1/boards/<board>/jobs?content=true`. `<board>` is the public board token (the `stripe` in `boards.greenhouse.io/stripe`).
+2. Fetches via the shared `get_json()` helper (`src/ingestion/http_util.py`), which adds a couple of retries with backoff.
+3. Optionally filters by `title_contains` — Greenhouse lists *every* open role at a company, so this is usually wanted.
+4. Builds `job_board_id` as `f"greenhouse-{sha1(url)[:10]}"` — same convention as SEEK, distinct prefix so dedup never collides across sources.
 
-`src/ingestion/lever.py`. The second ATS source. Hits
-`https://api.lever.co/v0/postings/<company>?mode=json` (the `figma` in
-`jobs.lever.co/figma`). The response is a top-level JSON **array** (Greenhouse is
-a `{"jobs": [...]}` object) — a reminder that "ATS" isn't one shape, which is why
-each gets its own subclass. Like Greenhouse, it returns the whole board.
+The payoff: it's a JSON API, not RSS, yet `BaseScraper`, `cli.py`, and the storage layer didn't change to accommodate it. That's the abstraction holding.
 
-## Worked example 4: `AshbyScraper`
+### Scope note for Greenhouse
 
-`src/ingestion/ashby.py`. The third ATS source. Hits
-`https://api.ashbyhq.com/posting-api/job-board/<org>` (the `ashby` in
-`jobs.ashbyhq.com/ashby`); response is `{"jobs": [...]}` like Greenhouse. Two
-wrinkles worth knowing: it carries `isListed` (we skip unlisted postings), and
-it exposes remote as a separate `isRemote` boolean rather than baking it into
-the location string. We fold that flag into the location (`"Portugal"` →
-`"Portugal (Remote)"`) so the shared "remote always passes" filter behaves the
-same as it does for the other ATSs — otherwise a genuinely-remote Ashby role
-would be dropped by a city location filter.
+This reads the same public, unauthenticated JSON the board itself renders — no login, no API key, no anti-bot bypass. That keeps it inside the project's "public, non-authenticated" rule below.
 
-## Worked example 5: `AdzunaScraper`
+## Running multiple scrapers
 
-`src/ingestion/adzuna.py`. Replaces SEEK as the search/aggregator source after
-SEEK's public RSS went dead. Unlike the RSS feed it's a sanctioned API with a
-free tier, and **per-country** — `https://api.adzuna.com/v1/api/jobs/<country>/
-search/<page>?app_id=…&app_key=…&what=…&where=…` — so it reaches India (`in`) as
-well as Australia (`au`). Like SEEK it's a *search* source (`post_filter=False`):
-the planner expands `titles × locations` into queries, pairing each location with
-its country via `country_of()` (Adelaide→au, Mumbai→in) so it doesn't query the
-wrong index. Credentials come from the top-level `adzuna:` config block, threaded
-through `plan_scrapes(..., adzuna_auth=...)`. Its `job_board_id` is built from a
-*normalized* redirect URL — `_dedup_key()` hashes scheme+host+path only, dropping
-the per-search query string (`se`/`utm_*`/`where`) so the same ad fetched under
-two different searches collapses to one row instead of N (see
-[`docs/data-model.md`](./data-model.md)). Two honest limits: it needs an API
-key (config.yaml becomes sensitive — already gitignored), and the API returns
-only a description *snippet*, so generated materials/contacts have less to chew on.
-
-Why ATS scrapers and not "a scraper per company": most employers rent an ATS
-(Greenhouse, Lever, Ashby, Workday…) rather than build their own job site. A raw
-careers page is bespoke HTML/JS with no general way to scrape it; an ATS exposes
-a predictable public API. One ATS scraper unlocks every company on it. (The
-giants — Google, Amazon — run bespoke sites and would each need dedicated,
-ToS-sensitive scrapers; they're the hard cases, not the easy ones.)
-
-## Sources, filters, and the planner
-
-What you want (`filters.titles`, `filters.locations`) is kept separate from
-where you look (`sources`). `src/ingestion/planner.py`'s `plan_scrapes(sources,
-filters)` combines them, because the two source kinds use the intent
-differently:
+`config.yaml` can list several sources (see `docs/configuration.md`). `src/ingestion/factory.py` maps each validated source onto its scraper class:
 
 ```python
-def plan_scrapes(sources, filters):
-    # SEEK: each (title, location) is a query -> one SeekScraper per pair,
-    #       no post-filter (the query already filtered).
-    # ATS:  scrape the whole board once, post_filter=True -> filter results
-    #       with src/ingestion/filtering.py's job_matches().
-    ...
+def build_scraper(source) -> BaseScraper:
+    if source.type == "seek":
+        return SeekScraper(search_terms=source.title, location=source.location)
+    if source.type == "greenhouse":
+        return GreenhouseScraper(board=source.board, title_contains=source.title_contains)
+    raise ValueError(...)
 ```
 
-It returns `PlannedScrape(scraper, label, post_filter)` items. `cli.py` runs each,
-applies the filter to ATS results, and upserts. A planned scrape that throws is
-logged and skipped — it doesn't abort the run. Location filtering is lenient: a
-posting whose location mentions "remote" always passes (see
-`docs/configuration.md`).
-
-## Sources from a text file
-
-`config.yaml`'s `sources_file:` points at a plain-text file of *where* to look,
-parsed by `load_sources_file()` (`src/config.py`) into the same `Source` models
-and appended to inline `sources`. One per line, `#` comments ignored:
-
-```
-seek
-greenhouse stripe
-lever figma
-```
-
-Titles and locations are not in this file — they live in `filters`. You can
-also paste a board's careers URL (e.g. `https://boards.greenhouse.io/stripe`)
-in place of the `<type> <token>` form — `source_from_url()` auto-detects the
-ATS and token. See `sources.txt.example` and `docs/configuration.md`.
+`cli.py` loops over `config.resolved_sources`, runs each scraper, and upserts the results. A source that throws (network error, bad board token) is logged and skipped — it doesn't abort the rest of the run.
 
 ## Scope: what a new scraper is allowed to do
 
-In scope: public, non-authenticated pages/feeds (SEEK RSS) and official public
-APIs (Greenhouse, Lever boards). Out of scope: logging into a site to scrape
-behind auth (rules out a sign-in `LinkedInScraper`), and bypassing CAPTCHAs or
-anti-bot measures. If you fork and go further, that's your call and your risk.
+Per the README's "Scraping: scope and ethics" section, in-scope sources are:
 
-## Adding another scraper
+- Public, non-authenticated pages or feeds (what `SeekScraper` and `GreenhouseScraper` do)
+- Official APIs, where a job board provides one (Greenhouse's public boards API qualifies)
 
-1. New file `src/ingestion/<source>.py`, subclassing `BaseScraper`, returning
-   `JobPost`s with a distinct `source_name` and `<source>-<sha1(url)[:10]>` id.
-2. Add a config model in `src/config.py` (a new member of the `Source` union).
-3. Add a branch in `src/ingestion/planner.py` (`post_filter=True` for boards
-   that return everything, `False` for search-style sources).
-4. Add a test mirroring `tests/test_lever_scraper.py`.
+Out of scope:
 
-Nothing in `base_scraper.py` or `cli.py` should need to change.
+- Logging into a site to scrape behind auth (this specifically rules out a `LinkedInScraper` that signs in)
+- Bypassing CAPTCHAs or anti-bot measures
 
-## Validating board tokens (`make validate`)
+If you fork this and want to go further than that, it's your call and your risk — don't assume the project's existing ethics framing covers it.
 
-Tokens go stale: companies switch ATS, rename a board, or wind down. "Valid"
-means the token still resolves to a live public board. `src/ingestion/validate.py`
-checks a list of sources against the live APIs and reports each as **match**
-(live, ≥1 posting matching your `filters`), **live** (resolves, nothing matching
-right now), or **dead** (token didn't resolve — usually a 404).
+## Adding a third scraper
 
-It reuses everything: `plan_scrapes` builds the scraper, the scraper hits the
-same public API `make scrape` uses, and `job_matches()` counts matches. A dead
-token is caught and reported, not propagated — validating a list never aborts on
-one bad token. SEEK is reported live without a network call (it's a search
-engine, not a board).
+The checklist:
 
-```bash
-make validate                                   # check the boards in your config
-python -m src.ingestion.validate cands.txt --out sources.txt          # keep live boards
-python -m src.ingestion.validate cands.txt --out sources.txt --require-match  # only boards with a current match
-```
+1. New file `src/ingestion/<source>.py`, subclassing `BaseScraper`
+2. Set a distinct `source_name`
+3. Build `job_board_id` with that source's prefix so dedup doesn't collide across sources
+4. Add a config model in `src/config.py` (a new member of the `Source` union) and a branch in `src/ingestion/factory.py`
+5. Add a test mirroring `tests/test_greenhouse_scraper.py`'s mocking approach
 
-Where boards come from is a curation problem, not a scraping one: the companies
-that expose Greenhouse/Lever public APIs skew remote/global tech, so a curated
-list of those that hire your role beats a giant scraped token dump (slow, noisy,
-mostly irrelevant — the position `TODO.md` takes). `sources.txt` ships a
-validated starter set; `sources.candidates.txt` holds a wider pool to re-check.
-Paste a careers URL and `source_from_url()` detects the ATS + token for you.
+Nothing in `base_scraper.py` or `cli.py` should need to change — if it does, that's a smell worth looking at.
 
 ## Rate limiting / politeness
 
-`src/ingestion/http_util.py`'s `get_json()` adds a polite User-Agent and
-retry-with-backoff on transient (connection/timeout/5xx) failures; 4xx is raised
-immediately. The ATS scrapers use it. `SeekScraper` makes a single `feedparser`
-request per `scrape()`. No shared throttle yet — a future paginating scraper
-would add its own delay.
-
-## Debugging a scrape (capture)
-
-When a scrape returns fewer jobs than expected, the cause is usually filtering,
-not the source. Two aids:
-
-- The per-plan log distinguishes fetched vs. kept for ATS boards, e.g.
-  `greenhouse[stripe]: 168 fetched, 0 kept after filters, 0 new` — if `kept` is
-  0 but `fetched` isn't, your `filters` are too strict (a common one: a
-  `locations` filter for a city the company has no office in; remote roles still
-  pass).
-- Set `JOBHUNTER_DUMP_DIR` to write each scrape's **unfiltered** output to JSON
-  (`src/ingestion/capture.py`). 
+`src/ingestion/http_util.py` provides `get_json()` with a polite User-Agent and retry-with-backoff on transient (connection/timeout/5xx) failures; 4xx errors are raised immediately since retrying won't help. `GreenhouseScraper` uses it. `SeekScraper` makes a single `feedparser` request per `scrape()` and doesn't go through it. If a future scraper paginates heavily, it should add its own inter-page delay — `get_json()` covers retries, not throttling.
