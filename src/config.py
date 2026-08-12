@@ -49,10 +49,42 @@ class GreenhouseSource(BaseModel):
 
     type: Literal["greenhouse"]
     board: str
-    # Optional client-side filter: only keep postings whose title contains
-    # this substring (case-insensitive). Greenhouse boards list every open
-    # role at a company, so this is usually wanted.
-    title_contains: Optional[str] = None
+
+
+class LeverSource(BaseModel):
+    """A Lever board. `company` is the public token, e.g. the `figma` in
+    `jobs.lever.co/figma`."""
+
+    type: Literal["lever"]
+    company: str
+
+
+class AshbySource(BaseModel):
+    """An Ashby board. `org` is the public token, e.g. the `ashby` in
+    `jobs.ashbyhq.com/ashby`."""
+
+    type: Literal["ashby"]
+    org: str
+
+
+class AdzunaSource(BaseModel):
+    """An Adzuna search, scoped to one country index (`au`, `in`, `gb`, ...).
+
+    Adzuna's API is per-country (the country is a path segment), so you list one
+    source per country you want, e.g. `adzuna au` and `adzuna in`. Titles come
+    from `filters`; the planner pairs each of `filters.locations` with the
+    matching country (so Adelaide is searched under `au`, Mumbai under `in`).
+    Credentials are NOT here — they're account-level, in the top-level `adzuna:`
+    block (app_id/app_key). See docs/scrapers.md.
+    """
+
+    type: Literal["adzuna"]
+    country: str = DEFAULT_ADZUNA_COUNTRY
+
+    @model_validator(mode="after")
+    def _normalise_country(self) -> "AdzunaSource":
+        self.country = (self.country or DEFAULT_ADZUNA_COUNTRY).strip().lower()
+        return self
 
 
 # Discriminated union: Pydantic picks the model by the `type` field.
