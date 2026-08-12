@@ -8,7 +8,7 @@ from src.config import Source
 from src.ingestion.base_scraper import BaseScraper
 from src.ingestion.greenhouse import GreenhouseScraper
 from src.ingestion.seek import SeekScraper
-
+from src.ingestion.ashby import AshbyScraper
 
 def build_scraper(source: Source) -> BaseScraper:
     if source.type == "seek":
@@ -17,4 +17,8 @@ def build_scraper(source: Source) -> BaseScraper:
         return GreenhouseScraper(
             board=source.board, title_contains=source.title_contains
         )
+    if source.type == "ashby":
+            return AshbyScraper(
+                board=source.board, title_contains=source.title_contains
+            )
     raise ValueError(f"Unknown source type: {source.type!r}")
