@@ -282,4 +282,3 @@ then pull from the backlog.
 ## Done recently (context, prune when stale)
 
 - [x] **config.yaml migrated to the `filters` + `sources` schema** and ver
-
