@@ -51,7 +51,7 @@ class GreenhouseScraper(BaseScraper):
                 continue
 
             url = entry.get("absolute_url", "")
-            # Same dedup convention as SeekScraper: "<source>-<sha1(url)[:10]>".
+            # Same dedup convention as the other scrapers: "<source>-<sha1(url)[:10]>".
             job_board_id = f"greenhouse-{hashlib.sha1(url.encode()).hexdigest()[:10]}"
 
             location = (entry.get("location") or {}).get("name", "")

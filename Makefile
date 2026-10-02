@@ -32,7 +32,7 @@ validate:
 	python -m src.ingestion.validate
 
 
-# Propose new boards from companies already in your SEEK results. Writes
+# Propose new boards from companies already in your Adzuna results. Writes
 # commented proposals to sources.discovered.txt — review and uncomment to
 # approve, then move the keepers into sources.txt. See docs/board-discovery.md.
 discover:
@@ -49,7 +49,7 @@ contacts:
 validate:
 	python -m src.ingestion.validate
 
-# Propose new boards from companies already in your SEEK results. Writes
+# Propose new boards from companies already in your Adzuna results. Writes
 # commented proposals to sources.discovered.txt — review and uncomment to
 # approve, then move the keepers into sources.txt. See docs/board-discovery.md.
 discover:

@@ -123,6 +123,19 @@ def test_exits_on_config_error(monkeypatch, capsys):
     assert "bad config.yaml" in capsys.readouterr().err
 
 
+def test_exits_when_no_sources_are_active(tmp_path, monkeypatch, capsys):
+    # A sources file with every line commented out used to run zero scrapes
+    # and report "Done". It should stop and say why instead.
+    sources = tmp_path / "sources.txt"
+    sources.write_text("# seek\n# greenhouse acme\n", encoding="utf-8")
+    cfg = config.Config.model_validate({"sources_file": str(sources)})
+    monkeypatch.setattr(cli, "load_config", lambda *a, **k: cfg)
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 1
+    assert "No sources configured" in capsys.readouterr().err
+
+
 def test_dump_dir_writes_unfiltered_output(tmp_path, monkeypatch):
     import os
 

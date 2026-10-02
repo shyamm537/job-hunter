@@ -12,8 +12,8 @@ public API `make scrape` uses, and `job_matches` reports how many current
 postings match your filters. A dead token surfaces as the scraper raising
 (usually a 404 from `http_util.get_json`).
 
-SEEK is a search engine, not a board, so it's reported as "live (search source)"
-without a network call — there's nothing to validate.
+Adzuna is a search engine, not a board, so it's reported as "live (search
+source)" without a network call — there's nothing to validate.
 
 Run it (`make validate`, or directly):
 
@@ -70,7 +70,7 @@ def validate_source(source: Source, filters: Filters) -> ValidationResult:
     A scraper that raises (e.g. a 404 for a stale token) is reported dead, not
     propagated — validating a list shouldn't abort on the first bad token.
     """
-    if source.type in ("seek", "adzuna"):
+    if source.type == "adzuna":
         # A search engine, not a board — nothing to validate here. (Bad Adzuna
         # creds fail at scrape time, not as a stale-token check.)
         return ValidationResult(
@@ -109,7 +109,7 @@ def _kept(results: List[ValidationResult], require_match: bool) -> List[Validati
     at least one currently-matching role. Search sources always kept."""
     out = []
     for r in results:
-        if r.source.type in ("seek", "adzuna") or (
+        if r.source.type == "adzuna" or (
             r.live and (r.matched > 0 or not require_match)
         ):
             out.append(r)
@@ -154,7 +154,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     log.info("Validating %d source(s)...", len(sources))
     results = validate_sources(sources, filters)
 
-    live = [r for r in results if r.live and r.source.type not in ("seek", "adzuna")]
+    live = [r for r in results if r.live and r.source.type != "adzuna"]
     match = [r for r in live if r.matched > 0]
     dead = [r for r in results if not r.live]
     log.info(

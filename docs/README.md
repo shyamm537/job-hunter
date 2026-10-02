@@ -6,7 +6,7 @@ This is placeholder documentation scaffolded against the current state of the co
 |---|---|
 | [`architecture.md`](./architecture.md) | Layered design, the three core patterns (Strategy ingestion, DB-backed queue, LLM abstraction), end-to-end data flow |
 | [`data-model.md`](./data-model.md) | `JobPost` schema field-by-field, dedup strategy, known looseness, future table candidates |
-| [`scrapers.md`](./scrapers.md) | `BaseScraper` contract, the `SeekScraper` worked example, scraping scope/ethics, how to add a new source |
+| [`scrapers.md`](./scrapers.md) | `BaseScraper` contract, worked examples per scraper, scraping scope/ethics, how to add a new source |
 | [`llm-providers.md`](./llm-providers.md) | `LLMClient` contract, `OllamaClient`, prompt templates, how to add a new backend |
 | [`configuration.md`](./configuration.md) | Every `config.yaml` field, what's actually wired up vs. documented-only |
 | [`submitting.md`](./submitting.md) | Manual application submission, per ATS (Greenhouse, Lever, Ashby, Workday, SEEK, …) — what to expect, time, gotchas |

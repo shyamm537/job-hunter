@@ -3,11 +3,11 @@
 The config separates *what* you're looking for from *where* you look:
 
 - `filters`: the titles and locations you want (shared across all sources).
-- `sources`: where to look — a SEEK/Adzuna search, or a Greenhouse/Lever board.
+- `sources`: where to look — an Adzuna search, or a Greenhouse/Lever/Ashby board.
 
-This split exists because the source types use that intent differently. SEEK and
-Adzuna are search engines, so each (title, location) becomes a query. An ATS
-board (Greenhouse, Lever) returns a company's whole list, so the filters are
+This split exists because the source types use that intent differently. Adzuna
+is a search engine, so each (title, location) becomes a query. An ATS board
+(Greenhouse, Lever, Ashby) returns a company's whole list, so the filters are
 applied to the results afterwards. Keeping titles/locations out of the
 per-source lines is what makes the source file clean and the model easy to
 reason about.
@@ -45,28 +45,13 @@ class ConfigError(Exception):
 class Filters(BaseModel):
     """What you're looking for, shared across every source.
 
-    For SEEK/Adzuna, titles x locations become search queries. For ATS boards,
+    For Adzuna, titles x locations become search queries. For ATS boards,
     they filter the fetched postings (see src/ingestion/filtering.py). Empty
     lists mean "no filter" — every posting passes.
     """
 
     titles: List[str] = Field(default_factory=list)
     locations: List[str] = Field(default_factory=list)
-
-
-class SeekSource(BaseModel):
-    """A SEEK search. Titles come from `filters`.
-
-    SEEK is an Australia/New-Zealand board, so its *search* locations can be
-    scoped here, independently of the global `filters.locations`. Set
-    `locations` to the AU/NZ places you want SEEK to search; leave it unset to
-    fall back to `filters.locations`. (The global `filters.locations` still
-    post-filter ATS results across *all* regions — that's how non-AU coverage,
-    e.g. India, comes through Greenhouse/Lever/Ashby boards.)
-    """
-
-    type: Literal["seek"] = "seek"
-    locations: Optional[List[str]] = None
 
 
 class GreenhouseSource(BaseModel):
@@ -112,22 +97,12 @@ class AdzunaSource(BaseModel):
         self.country = (self.country or DEFAULT_ADZUNA_COUNTRY).strip().lower()
         return self
 
+
 # Discriminated union: Pydantic picks the model by the `type` field.
 Source = Annotated[
-    Union[SeekSource, GreenhouseSource, LeverSource, AshbySource, AdzunaSource],
+    Union[GreenhouseSource, LeverSource, AshbySource, AdzunaSource],
     Field(discriminator="type"),
 ]
-
-
-class SearchConfig(BaseModel):
-    """Legacy single-search shim, kept so older configs keep working.
-
-    A `search:` block is equivalent to one SEEK source plus a one-title,
-    one-location `filters` block. Prefer `filters` + `sources` for anything new.
-    """
-
-    title: str
-    location: str = DEFAULT_LOCATION
 
 
 class LLMConfig(BaseModel):
@@ -198,44 +173,44 @@ class Config(BaseModel):
     # Path to a plain-text file of sources, one per line (see load_sources_file).
     # Its sources are appended to any inline `sources` above.
     sources_file: Optional[str] = None
-    # Legacy: a single SEEK search. Used as a fallback for filters and sources.
-    search: Optional[SearchConfig] = None
     llm: LLMConfig = Field(default_factory=LLMConfig)
     adzuna: Optional[AdzunaConfig] = None
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     resume_summary: str = ""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_legacy_search(cls, data):
+        # The single-search `search:` block only ever drove SEEK, which was
+        # removed (KAN-32). Name the fix instead of a bare "extra input" error.
+        if isinstance(data, dict) and "search" in data:
+            raise ValueError(
+                "the legacy 'search:' block is no longer supported (it only "
+                "drove the removed SEEK source). Move its title/location into "
+                "'filters' and list where to look under 'sources' or a "
+                "'sources_file' — see config.yaml.example"
+            )
+        return data
+
     @model_validator(mode="after")
     def _require_at_least_one_source(self) -> "Config":
-        if not self.sources and not self.search and not self.sources_file:
-            raise ValueError(
-                "config must define 'sources', a 'sources_file', or a legacy "
-                "'search' block"
-            )
+        if not self.sources and not self.sources_file:
+            raise ValueError("config must define 'sources' or a 'sources_file'")
         return self
 
     @property
     def resolved_sources(self) -> List[Source]:
-        """Where to look: inline `sources` + `sources_file`, falling back to a
-        single SEEK source derived from a legacy `search:` block."""
+        """Where to look: inline `sources` plus any from `sources_file`.
+        Can be empty (a sources file with every line commented out)."""
         collected: List[Source] = list(self.sources or [])
         if self.sources_file:
             collected.extend(load_sources_file(self.sources_file))
-        if collected:
-            return collected
-        if self.search is not None:
-            return [SeekSource()]
-        return []
+        return collected
 
     @property
     def resolved_filters(self) -> Filters:
-        """What to look for: the `filters` block, falling back to a legacy
-        `search:` block (its title/location become one-element lists)."""
-        if self.filters.titles or self.filters.locations:
-            return self.filters
-        if self.search is not None:
-            return Filters(titles=[self.search.title], locations=[self.search.location])
-        return Filters()
+        """What to look for: the `filters` block."""
+        return self.filters
 
     @property
     def adzuna_auth(self) -> Optional[Tuple[str, str]]:
@@ -260,7 +235,7 @@ _ATS_HOSTS = {
 
 def _looks_like_url(token: str) -> bool:
     """Heuristic: does this single token look like a careers URL rather than a
-    bare source word like `seek` or `greenhouse`?
+    bare source word like `adzuna` or `greenhouse`?
 
     True if it carries a scheme (`https://…`) or a host/path separator (`/`) or
     a dotted host (`boards.greenhouse.io`). The bare `<type> <token>` forms have
@@ -320,8 +295,6 @@ def source_to_line(source: Source) -> str:
     """Serialise a Source back to a sources-file line — the inverse of
     `_source_from_line`. Used by the board validator to write a clean
     `sources.txt` of confirmed-live boards."""
-    if source.type == "seek":
-        return "seek"
     if source.type == "greenhouse":
         return f"greenhouse {source.board}"
     if source.type == "lever":
@@ -341,13 +314,6 @@ def _source_from_line(path: str, lineno: int, parts: List[str]) -> Source:
 
     kind = parts[0].lower()
     args = parts[1:]
-    if kind == "seek":
-        if args:
-            raise ConfigError(
-                f"{path} line {lineno}: 'seek' takes no arguments "
-                "(titles/locations come from the filters block)"
-            )
-        return SeekSource()
     if kind == "greenhouse":
         if len(args) != 1:
             raise ConfigError(
@@ -376,7 +342,7 @@ def _source_from_line(path: str, lineno: int, parts: List[str]) -> Source:
         return AdzunaSource(type="adzuna", country=country)
     raise ConfigError(
         f"{path} line {lineno}: unknown source type {parts[0]!r} "
-        "(expected seek, greenhouse, lever, ashby, or adzuna)"
+        "(expected greenhouse, lever, ashby, or adzuna)"
     )
 
 
@@ -385,7 +351,6 @@ def load_sources_file(path: str) -> List[Source]:
 
     One source per line; blank lines and `#` comments ignored. Format:
 
-        seek                 # a SEEK search (uses the filters block)
         adzuna au            # an Adzuna search, country index au (needs creds)
         adzuna in            # ... and India
         greenhouse stripe    # an ATS board, by company token

@@ -381,7 +381,7 @@ def pending_contact_jobs(session: Session) -> List[JobPost]:
 # Every job_board_id is "<source>-<hash>" (see src/ingestion/*). The source is
 # the prefix before the first dash; no source name contains a dash, so a
 # LIKE '<source>-%' filter is exact.
-KNOWN_SOURCES = ("seek", "adzuna", "greenhouse", "lever", "ashby")
+KNOWN_SOURCES = ("adzuna", "greenhouse", "lever", "ashby")
 
 
 class JobSummary(NamedTuple):

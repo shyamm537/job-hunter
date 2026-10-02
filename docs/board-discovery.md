@@ -32,12 +32,12 @@ Workday boards are **manual-only** for now: their data-center subdomain (`wd5`)
 isn't derivable from a name, so they can only be added from a pasted careers URL
 once the Workday scraper exists (see [`docs/workday.md`](./workday.md)).
 
-## 2. Discovery from your SEEK results (`make discover`)
+## 2. Discovery from your Adzuna results (`make discover`)
 
-Semi-automated, **propose-then-approve**. Your search sources (Adzuna — SEEK's RSS is dead) already surface
+Semi-automated, **propose-then-approve**. Your search source (Adzuna) already surfaces
 companies hiring your exact roles. `make discover` (`src/ingestion/discover.py`):
 
-1. Reads the distinct **companies** from SEEK postings already in your DB.
+1. Reads the distinct **companies** from Adzuna postings already in your DB.
 2. Slugifies each name into candidate board tokens (drops legal suffixes like
    "Pty Ltd"; tries a joined and a hyphenated form).
 3. Builds Greenhouse/Lever/Ashby candidates and **validates each live** (reusing
@@ -49,7 +49,7 @@ Nothing is added automatically. You review, uncomment the keepers, and move them
 into `sources.txt`:
 
 ```bash
-make scrape       # populate SEEK companies first (if you haven't)
+make scrape       # populate Adzuna companies first (if you haven't)
 make discover     # writes sources.discovered.txt
 # review it, uncomment the boards worth keeping, paste them into sources.txt
 make validate     # sanity-check the merged list
@@ -62,9 +62,9 @@ make validate     # sanity-check the merged list
   equals the name slug** (`Acme` → `acme`). When the token differs (`acme-inc`,
   an acronym, a parent-company token) or the company is on Workday, it misses.
   Treat it as "free easy wins," not full coverage.
-- **It's only as good as your SEEK data.** Discovery proposes from companies SEEK
+- **It's only as good as your Adzuna data.** Discovery proposes from companies Adzuna
   already returned for your titles/locations — relevant by construction, but
-  bounded by what SEEK surfaces.
+  bounded by what Adzuna surfaces.
 - **It makes live API calls** (companies × ~2 slugs × 3 ATS). Bounded with
   `--limit N`. In-scope: same public endpoints as the scrapers, polite UA +
   backoff via `http_util`.

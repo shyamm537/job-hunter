@@ -1,7 +1,7 @@
 """Apply the global title/location filters to scraped postings.
 
-Used for ATS sources (Greenhouse/Lever), which return a company's whole board.
-SEEK isn't post-filtered — its search query already did the filtering.
+Used for ATS sources (Greenhouse/Lever/Ashby), which return a company's whole
+board. Adzuna isn't post-filtered — its search query already did the filtering.
 
 Matching is lenient on purpose:
 - Empty filter list => everything matches.

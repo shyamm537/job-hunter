@@ -8,7 +8,6 @@
 # Only read if config.yaml has a `sources_file:` line pointing here; without
 # that pointer, this file is ignored no matter what it contains.
 #
-#   seek                 # a SEEK search, driven by filters
 #   adzuna <country>     # an Adzuna search (au, in, ...); needs adzuna: creds
 #   greenhouse <token>   # an ATS board, by company token
 #   lever <token>
@@ -20,7 +19,6 @@
 #   https://jobs.lever.co/<token>             # → lever <token>
 #   https://jobs.ashbyhq.com/<token>          # → ashby <token>
 
-seek
 adzuna au
 adzuna in
 greenhouse stripe

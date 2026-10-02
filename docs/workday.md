@@ -9,7 +9,7 @@
 The other ATS scrapers skew remote/global tech, because that's who exposes
 Greenhouse/Lever/Ashby public APIs. Many **local AU/India** data employers
 (banks, consultancies, large enterprises) run **Workday** instead. So Workday is
-the channel most likely to surface the local roles SEEK + the current ATS boards
+the channel most likely to surface the local roles Adzuna + the current ATS boards
 miss. That's the whole reason to take on the extra complexity.
 
 ## Why it's not "one file like Lever"

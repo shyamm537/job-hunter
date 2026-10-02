@@ -3,7 +3,7 @@
 # resume summary, not something you commit.
 
 # ── What you're looking for ─────────────────────────────────────────────────
-# Shared across every source. For SEEK, titles x locations become searches.
+# Shared across every source. For Adzuna, titles x locations become searches.
 # For ATS boards (Greenhouse/Lever/Ashby), they filter the fetched postings.
 # Empty lists mean "no filter". A posting in a "remote" location always passes
 # the location filter.
@@ -15,12 +15,9 @@ filters:
 # Sources are just "where". ATS boards (greenhouse/lever/ashby) are global —
 # they return a company's whole list and the location filter above keeps the
 # ones you want, so non-AU roles (e.g. India: "Bangalore", "Mumbai") come
-# through here. SEEK, by contrast, is an Australia/NZ board, so scope its
-# *search* locations with `locations:` (otherwise it uses filters.locations and
-# wastes searches on non-AU cities that return nothing).
+# through here. Adzuna is per-country: each location is searched only under
+# the matching country's source (Adelaide under `au`, Mumbai under `in`).
 sources:
-  - type: seek
-    locations: ["Adelaide", "Sydney"]   # AU/NZ only; omit to use filters.locations
   - type: greenhouse
     board: "stripe"                  # token in boards.greenhouse.io/stripe
   - type: lever
@@ -34,12 +31,6 @@ sources:
 # sources.txt.example). Its sources are appended to the ones above.
 # sources_file: "sources.txt"
 
-# Legacy: a single SEEK search. Still works — it's treated as one seek source
-# plus a one-title/one-location filters block. Prefer filters + sources above.
-# search:
-#   title: "data analyst"
-#   location: "Adelaide"
-
 llm:
   backend: ollama               # only "ollama" is implemented today
   model: llama3                 # must be pulled already: `ollama pull llama3`
@@ -49,9 +40,10 @@ llm:
   retry_backoff: 1.0            # base seconds; waits retry_backoff * 2**attempt
 
 # ── Adzuna search API (optional) ────────────────────────────────────────────
-# Sanctioned job-search API with a free tier; per-country (au, in, gb, ...), so
-# it reaches non-AU cities SEEK can't. Register free at developer.adzuna.com,
-# then add `adzuna au` / `adzuna in` sources. Omit this block to skip Adzuna.
+# Sanctioned job-search API with a free tier; per-country (au, in, gb, ...).
+# It's the only search source, and every `adzuna` source needs these creds.
+# Register free at developer.adzuna.com. Without this block, remove the
+# `adzuna` sources above or the scrape will stop with a config error.
 # adzuna:
 #   app_id: "YOUR_ADZUNA_APP_ID"
 #   app_key: "YOUR_ADZUNA_APP_KEY"

@@ -18,29 +18,17 @@ A scraper takes whatever it needs in `__init__` and returns a list of
 about filters — it's a pure fetcher. Selecting and filtering happen above it
 (see "Sources, filters, and the planner").
 
-## Worked example 1: `SeekScraper`
-
-`src/ingestion/seek.py`. Builds a SEEK public RSS search URL from a `search_terms`
-and `location`, parses it with `feedparser`, maps RSS fields onto `JobPost`, and
-builds `job_board_id` as `f"seek-{sha1(url)[:10]}"`. It's a search: it takes one
-title + one location and returns matching postings. No login, no anti-bot bypass.
-
-SEEK (`au.seek.com`) covers **Australia/NZ only**, so it can only search AU/NZ
-locations. A `seek` source therefore accepts an optional `locations:` to scope
-its searches (defaulting to `filters.locations`). Other regions — e.g. India —
-are covered by ATS boards + the global location filter, not SEEK, because no
-public-feed SEEK equivalent exists there (see [`docs/configuration.md`](./configuration.md)).
-
-## Worked example 2: `GreenhouseScraper`
+## Worked example 1: `GreenhouseScraper`
 
 `src/ingestion/greenhouse.py`. The first ATS source. Hits the public boards API
 `https://boards-api.greenhouse.io/v1/boards/<board>/jobs?content=true` (the
 `stripe` in `boards.greenhouse.io/stripe`) and maps the JSON onto `JobPost`. It
 returns the company's **whole** board — filtering by title/location happens
-afterwards (see the planner). It's a JSON API, not RSS, yet `BaseScraper`, the
-CLI, and storage didn't change to absorb it. That's the abstraction holding.
+afterwards (see the planner). Its `job_board_id` is
+`f"greenhouse-{sha1(url)[:10]}"`, the convention the other board scrapers
+follow.
 
-## Worked example 3: `LeverScraper`
+## Worked example 2: `LeverScraper`
 
 `src/ingestion/lever.py`. The second ATS source. Hits
 `https://api.lever.co/v0/postings/<company>?mode=json` (the `figma` in
@@ -48,7 +36,7 @@ CLI, and storage didn't change to absorb it. That's the abstraction holding.
 a `{"jobs": [...]}` object) — a reminder that "ATS" isn't one shape, which is why
 each gets its own subclass. Like Greenhouse, it returns the whole board.
 
-## Worked example 4: `AshbyScraper`
+## Worked example 3: `AshbyScraper`
 
 `src/ingestion/ashby.py`. The third ATS source. Hits
 `https://api.ashbyhq.com/posting-api/job-board/<org>` (the `ashby` in
@@ -60,13 +48,12 @@ the location string. We fold that flag into the location (`"Portugal"` →
 same as it does for the other ATSs — otherwise a genuinely-remote Ashby role
 would be dropped by a city location filter.
 
-## Worked example 5: `AdzunaScraper`
+## Worked example 4: `AdzunaScraper`
 
-`src/ingestion/adzuna.py`. Replaces SEEK as the search/aggregator source after
-SEEK's public RSS went dead. Unlike the RSS feed it's a sanctioned API with a
-free tier, and **per-country** — `https://api.adzuna.com/v1/api/jobs/<country>/
+`src/ingestion/adzuna.py`. The search/aggregator source. It's a sanctioned API
+with a free tier, and **per-country** — `https://api.adzuna.com/v1/api/jobs/<country>/
 search/<page>?app_id=…&app_key=…&what=…&where=…` — so it reaches India (`in`) as
-well as Australia (`au`). Like SEEK it's a *search* source (`post_filter=False`):
+well as Australia (`au`). It's a *search* source (`post_filter=False`):
 the planner expands `titles × locations` into queries, pairing each location with
 its country via `country_of()` (Adelaide→au, Mumbai→in) so it doesn't query the
 wrong index. Credentials come from the top-level `adzuna:` config block, threaded
@@ -94,8 +81,8 @@ differently:
 
 ```python
 def plan_scrapes(sources, filters):
-    # SEEK: each (title, location) is a query -> one SeekScraper per pair,
-    #       no post-filter (the query already filtered).
+    # Adzuna: each (title, location) is a query -> one AdzunaScraper per pair
+    #         in that country, no post-filter (the query already filtered).
     # ATS:  scrape the whole board once, post_filter=True -> filter results
     #       with src/ingestion/filtering.py's job_matches().
     ...
@@ -114,7 +101,7 @@ parsed by `load_sources_file()` (`src/config.py`) into the same `Source` models
 and appended to inline `sources`. One per line, `#` comments ignored:
 
 ```
-seek
+adzuna au
 greenhouse stripe
 lever figma
 ```
@@ -126,8 +113,8 @@ ATS and token. See `sources.txt.example` and `docs/configuration.md`.
 
 ## Scope: what a new scraper is allowed to do
 
-In scope: public, non-authenticated pages/feeds (SEEK RSS) and official public
-APIs (Greenhouse, Lever boards). Out of scope: logging into a site to scrape
+In scope: public, non-authenticated pages/feeds and official public APIs
+(Greenhouse, Lever, Ashby boards; the Adzuna search API). Out of scope: logging into a site to scrape
 behind auth (rules out a sign-in `LinkedInScraper`), and bypassing CAPTCHAs or
 anti-bot measures. If you fork and go further, that's your call and your risk.
 
@@ -153,7 +140,7 @@ right now), or **dead** (token didn't resolve — usually a 404).
 It reuses everything: `plan_scrapes` builds the scraper, the scraper hits the
 same public API `make scrape` uses, and `job_matches()` counts matches. A dead
 token is caught and reported, not propagated — validating a list never aborts on
-one bad token. SEEK is reported live without a network call (it's a search
+one bad token. Adzuna is reported live without a network call (it's a search
 engine, not a board).
 
 ```bash
@@ -173,8 +160,7 @@ Paste a careers URL and `source_from_url()` detects the ATS + token for you.
 
 `src/ingestion/http_util.py`'s `get_json()` adds a polite User-Agent and
 retry-with-backoff on transient (connection/timeout/5xx) failures; 4xx is raised
-immediately. The ATS scrapers use it. `SeekScraper` makes a single `feedparser`
-request per `scrape()`. No shared throttle yet — a future paginating scraper
+immediately. The ATS scrapers use it. No shared throttle yet — a future paginating scraper
 would add its own delay.
 
 ## Debugging a scrape (capture)

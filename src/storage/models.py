@@ -12,7 +12,7 @@ from sqlmodel import Field, SQLModel
 
 class JobPost(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    job_board_id: str = Field(unique=True)  # e.g. "seek-4029412"
+    job_board_id: str = Field(unique=True)  # e.g. "greenhouse-4029412abc"
     title: str
     company: str
     location: str  # Adelaide, Bangalore, Remote, etc.

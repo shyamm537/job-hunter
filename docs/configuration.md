@@ -10,7 +10,7 @@ readable `ConfigError`, not a bare `KeyError`.
 The config separates **what** you're looking for from **where** you look:
 
 - `filters` — the `titles` and `locations` you want, shared across all sources.
-- `sources` — where to look: a SEEK search, or a Greenhouse / Lever board.
+- `sources` — where to look: an Adzuna search, or a Greenhouse / Lever / Ashby board.
 
 ```yaml
 filters:
@@ -18,7 +18,8 @@ filters:
   locations: ["Adelaide", "Sydney"]
 
 sources:
-  - type: seek                 # uses the filters as searches
+  - type: adzuna               # uses the filters as searches; needs adzuna: creds
+    country: "au"
   - type: greenhouse
     board: "stripe"            # token from boards.greenhouse.io/stripe
   - type: lever
@@ -27,9 +28,9 @@ sources:
 
 This split exists because the source types use the intent differently:
 
-- **SEEK** is a search engine, so `titles × locations` become search queries —
-  two titles and two locations is four searches.
-- **An ATS board** (Greenhouse, Lever) returns a company's *whole* list, so the
+- **Adzuna** is a search engine, so `titles × locations` become search queries —
+  two titles and two locations is four searches (per matching country).
+- **An ATS board** (Greenhouse, Lever, Ashby) returns a company's *whole* list, so the
   same titles/locations filter the postings *after* fetching.
 
 Keeping titles/locations out of the per-source lines is what makes the sources
@@ -43,11 +44,11 @@ clean and uniform — a source is purely "where".
 - Location: case-insensitive substring against any wanted location, **but a
   posting whose location mentions "remote" always passes** — you rarely want to
   drop remote roles. (See `src/ingestion/filtering.py`.)
-- SEEK is never post-filtered; its search query already did the filtering.
+- Adzuna is never post-filtered; its search query already did the filtering.
 
 ### Regions: Adzuna searches AU + India, ATS is global
 
-The live search source is **Adzuna** (SEEK's public RSS is dead). Adzuna is
+The search source is **Adzuna**. It is
 per-country, so it *searches* both Australia (`au`) and India (`in`) — the
 planner pairs each location with its country index via `country_of()`. ATS
 boards (Greenhouse/Lever/Ashby) are different: they return a company's whole
@@ -68,9 +69,6 @@ sources:
   - adzuna in      # searches Indian locations
   - greenhouse some-india-hiring-company
 ```
-
-(SEEK is AU/NZ-only and dead anyway; if its feed ever returns, a `seek` source
-takes an optional `locations:` to scope *its* searches to AU/NZ. See `TODO.md`.)
 
 ## Sources file
 
@@ -101,7 +99,7 @@ Its sources are appended to any inline `sources`. One source per line, blank
 lines and `#` comments ignored. Lines say *where* only (no titles/locations):
 
 ```
-seek                 # a SEEK search, driven by filters
+adzuna au            # an Adzuna search, driven by filters
 greenhouse stripe    # an ATS board, by company token
 lever figma
 ```
@@ -130,19 +128,22 @@ A bad line fails with a `ConfigError` naming the line number. See
 
 | Key | Used by | Status |
 |---|---|---|
-| `filters.titles` / `filters.locations` | `src/ingestion/planner.py` (SEEK queries) + `src/ingestion/filtering.py` (ATS post-filter) | Implemented. Empty = no filter. |
-| `sources[].type: seek` (`locations?`) | expands to `titles × locations` SEEK searches | Implemented. SEEK is AU/NZ-only; optional `locations` scopes *its* searches (falls back to `filters.locations`). |
+| `filters.titles` / `filters.locations` | `src/ingestion/planner.py` (Adzuna queries) + `src/ingestion/filtering.py` (ATS post-filter) | Implemented. Empty = no filter. |
+| `sources[].type: adzuna` (`country`) | expands to `titles × locations` Adzuna searches in that country | Implemented. Needs the top-level `adzuna:` block (`app_id`, `app_key`). |
 | `sources[].type: greenhouse` (`board`) | `GreenhouseScraper`, then post-filtered | Implemented. |
 | `sources[].type: lever` (`company`) | `LeverScraper`, then post-filtered | Implemented. |
 | `sources[].type: ashby` (`org`) | `AshbyScraper`, then post-filtered | Implemented. `org` is the `jobs.ashbyhq.com/<org>` token. |
 | `sources_file` | `src/config.py` → `load_sources_file()` | Implemented. Appended to inline `sources`. |
-| `search` (legacy) | shim → one seek source + a one-title/one-location filters block | Implemented. Prefer `filters` + `sources`. |
+| `adzuna.app_id` / `adzuna.app_key` | `src/ingestion/planner.py` → `AdzunaScraper` | Implemented. Free from developer.adzuna.com. |
 | `llm.backend` / `llm.model` / `llm.host` | `src/llm/client.py` | Implemented. Only `ollama` valid in the LLM layer; config layer permits extra `llm.*` keys (backend undecided). |
 | `resume_summary` | `src/llm/cli.py` → prompt templates | Implemented; a hand-written string, not parsed from a file. |
 | `database.url` | `src/storage/database.py` | Wired. See below. |
 
-At least one of `sources`, `sources_file`, or legacy `search` must be present,
-or validation fails.
+At least one of `sources` or `sources_file` must be present, or validation
+fails. `make scrape` also stops with a clear error if they add up to no active
+sources (e.g. every line in `sources.txt` commented out). The old single-search
+`search:` block was removed along with SEEK; a config that still has one fails
+with a message saying to move it into `filters` + `sources`.
 
 ## Database URL resolution
 
