@@ -12,4 +12,5 @@ config.yaml
 .env
 .streamlit/
 
-sources.txt.Rhistory
+sources.txt
+.Rhistory
