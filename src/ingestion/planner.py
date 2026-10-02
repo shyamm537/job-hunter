@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from src.config import DEFAULT_LOCATION, ConfigError, Filters, Source
+from src.config import AshbySource, LeverSource, GreenhouseSource, SeekSource, AdzunaSource
 from src.ingestion.adzuna import AdzunaScraper, country_of
 from src.ingestion.ashby import AshbyScraper
 from src.ingestion.base_scraper import BaseScraper
@@ -38,6 +39,121 @@ class PlannedScrape:
     # True for ATS boards, False for SEEK/Adzuna (their query already filtered).
     post_filter: bool
 
+def plan_seek(
+    source: SeekSource,
+    titles: List[str],
+    locations: List[str],
+    adzuna_auth: Optional[Tuple[str, str]] = None,
+) -> List[PlannedScrape]:
+    if not titles:
+        log.warning("SEEK source skipped: no filters.titles defined to search for")
+        return []
+    seek_locations = source.locations or locations
+    return [
+        PlannedScrape(
+            SeekScraper(search_terms=title, location=location),
+            f"seek[{title} @ {location}]",
+            post_filter=False,
+        )
+        for title in titles
+        for location in seek_locations
+    ]
+
+
+def plan_adzuna(
+    source: AdzunaSource,
+    titles: List[str],
+    locations: List[str],
+    adzuna_auth: Optional[Tuple[str, str]] = None,
+) -> List[PlannedScrape]:
+    if not titles:
+        log.warning("Adzuna source skipped: no filters.titles defined to search for")
+        return []
+    if adzuna_auth is None:
+        raise ConfigError(
+            "an 'adzuna' source needs credentials — add an 'adzuna:' "
+            "block with app_id and app_key to config.yaml "
+            "(register free at developer.adzuna.com)"
+        )
+    app_id, app_key = adzuna_auth
+    planned: List[PlannedScrape] = []
+    for title in titles:
+        for location in locations:
+            loc_country = country_of(location)
+            # Skip a location that belongs to a *different* country index
+            # (don't search Adelaide under `in`). Region-agnostic
+            # locations (remote/unknown -> None) run under this country.
+            if loc_country is not None and loc_country != source.country:
+                continue
+            planned.append(
+                PlannedScrape(
+                    AdzunaScraper(
+                        what=title,
+                        where=location,
+                        country=source.country,
+                        app_id=app_id,
+                        app_key=app_key,
+                    ),
+                    f"adzuna[{source.country}: {title} @ {location}]",
+                    post_filter=False,
+                )
+            )
+    return planned
+
+
+def plan_greenhouse(
+    source: GreenhouseSource,
+    titles: List[str],
+    locations: List[str],
+    adzuna_auth: Optional[Tuple[str, str]] = None,
+) -> List[PlannedScrape]:
+    return [
+        PlannedScrape(
+            GreenhouseScraper(board=source.board),
+            f"greenhouse[{source.board}]",
+            post_filter=True,
+        )
+    ]
+
+
+def plan_lever(
+    source: LeverSource,
+    titles: List[str],
+    locations: List[str],
+    adzuna_auth: Optional[Tuple[str, str]] = None,
+) -> List[PlannedScrape]:
+    return [
+        PlannedScrape(
+            LeverScraper(company=source.company),
+            f"lever[{source.company}]",
+            post_filter=True,
+        )
+    ]
+
+
+def plan_ashby(
+    source: AshbySource,
+    titles: List[str],
+    locations: List[str],
+    adzuna_auth: Optional[Tuple[str, str]] = None,
+) -> List[PlannedScrape]:
+    return [
+        PlannedScrape(
+            AshbyScraper(org=source.org),
+            f"ashby[{source.org}]",
+            post_filter=True,
+        )
+    ]
+
+
+SOURCE_PLANNERS = {
+    "seek": plan_seek,
+    "adzuna": plan_adzuna,
+    "greenhouse": plan_greenhouse,
+    "lever": plan_lever,
+    "ashby": plan_ashby,
+}
+
 
 def plan_scrapes(
     sources: List[Source],
@@ -49,81 +165,10 @@ def plan_scrapes(
     planned: List[PlannedScrape] = []
 
     for source in sources:
-        if source.type == "seek":
-            if not titles:
-                log.warning(
-                    "SEEK source skipped: no filters.titles defined to search for"
-                )
-                continue
-            seek_locations = source.locations or locations
-            for title in titles:
-                for location in seek_locations:
-                    planned.append(
-                        PlannedScrape(
-                            SeekScraper(search_terms=title, location=location),
-                            f"seek[{title} @ {location}]",
-                            post_filter=False,
-                        )
-                    )
-        elif source.type == "adzuna":
-            if not titles:
-                log.warning(
-                    "Adzuna source skipped: no filters.titles defined to search for"
-                )
-                continue
-            if adzuna_auth is None:
-                raise ConfigError(
-                    "an 'adzuna' source needs credentials — add an 'adzuna:' "
-                    "block with app_id and app_key to config.yaml "
-                    "(register free at developer.adzuna.com)"
-                )
-            app_id, app_key = adzuna_auth
-            for title in titles:
-                for location in locations:
-                    loc_country = country_of(location)
-                    # Skip a location that belongs to a *different* country index
-                    # (don't search Adelaide under `in`). Region-agnostic
-                    # locations (remote/unknown -> None) run under this country.
-                    if loc_country is not None and loc_country != source.country:
-                        continue
-                    planned.append(
-                        PlannedScrape(
-                            AdzunaScraper(
-                                what=title,
-                                where=location,
-                                country=source.country,
-                                app_id=app_id,
-                                app_key=app_key,
-                            ),
-                            f"adzuna[{source.country}: {title} @ {location}]",
-                            post_filter=False,
-                        )
-                    )
-        elif source.type == "greenhouse":
-            planned.append(
-                PlannedScrape(
-                    GreenhouseScraper(board=source.board),
-                    f"greenhouse[{source.board}]",
-                    post_filter=True,
-                )
-            )
-        elif source.type == "lever":
-            planned.append(
-                PlannedScrape(
-                    LeverScraper(company=source.company),
-                    f"lever[{source.company}]",
-                    post_filter=True,
-                )
-            )
-        elif source.type == "ashby":
-            planned.append(
-                PlannedScrape(
-                    AshbyScraper(org=source.org),
-                    f"ashby[{source.org}]",
-                    post_filter=True,
-                )
-            )
-        else:
-            raise ValueError(f"Unknown source type: {source.type!r}")
+        try:
+            planner = SOURCE_PLANNERS[source.type]
+        except KeyError:
+            raise ValueError(f"Unknown source type: {source.type!r}") from None
+        planned.extend(planner(source, titles, locations, adzuna_auth))
 
     return planned

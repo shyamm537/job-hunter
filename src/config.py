@@ -328,11 +328,14 @@ def source_from_url(url: str, where: str = "url") -> Source:
         )
     token = segments[0]
 
-    if ats == "greenhouse":
-        return GreenhouseSource(type="greenhouse", board=token)
-    if ats == "lever":
-        return LeverSource(type="lever", company=token)
-    return AshbySource(type="ashby", org=token)
+    returnables = {
+        "greenhouse": GreenhouseSource(type="greenhouse", board=token),
+        "lever": LeverSource(type="lever", company=token),
+        "ashby": AshbySource(type="ashby", org=token),
+    }
+
+    return returnables[ats]
+
 
 
 def source_to_line(source: Source) -> str:
