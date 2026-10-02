@@ -1,4 +1,4 @@
-.PHONY: setup scrape process app test lint
+.PHONY: setup scrape validate discover contacts process app test lint
 
 # venv binary dir differs by OS (Windows uses Scripts/, POSIX uses bin/)
 ifeq ($(OS),Windows_NT)
@@ -31,6 +31,23 @@ scrape:
 validate:
 	python -m src.ingestion.validate
 
+
+# Propose new boards from companies already in your SEEK results. Writes
+# commented proposals to sources.discovered.txt — review and uncomment to
+# approve, then move the keepers into sources.txt. See docs/board-discovery.md.
+discover:
+	python -m src.ingestion.discover
+
+# Optional, runs after scrape and before process so the cold email can address
+# a contact. Public, in-posting sources only (see docs/hiring-manager-lookup.md).
+contacts:
+	python -m src.contacts.cli
+
+# Check which configured boards are still live against their public ATS APIs.
+# Tokens go stale — run this anytime. To validate a candidate list and write a
+# clean sources.txt:  python -m src.ingestion.validate sources.candidates.txt --out sources.txt
+validate:
+	python -m src.ingestion.validate
 
 # Propose new boards from companies already in your SEEK results. Writes
 # commented proposals to sources.discovered.txt — review and uncomment to

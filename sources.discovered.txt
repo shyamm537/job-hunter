@@ -1,0 +1,98 @@
+# Discovered boards (proposals) — review and uncomment to approve.
+# Each was confirmed live; 'match' = has a role matching your filters now.
+
+# ashby airwallex    # match: 7 role(s)
+# ashby certifyos    # match: 1 role(s)
+# ashby claritypay    # match: 3 role(s)
+# ashby coreflow    # match: 1 role(s)
+# ashby ema    # match: 2 role(s)
+# ashby neara    # match: 3 role(s)
+# ashby pluralis-research    # match: 4 role(s)
+# ashby snowflake    # match: 1 role(s)
+# ashby xephyr    # match: 1 role(s)
+# ashby xero    # match: 3 role(s)
+# greenhouse andurilindustries    # match: 3 role(s)
+# greenhouse capco    # match: 6 role(s)
+# greenhouse clearviewhealthcarepartners    # match: 1 role(s)
+# greenhouse doordashaustralia    # match: 3 role(s)
+# greenhouse easygo    # match: 3 role(s)
+# greenhouse ferocia    # match: 1 role(s)
+# greenhouse interworks    # match: 1 role(s)
+# greenhouse khanacademy    # match: 1 role(s)
+# greenhouse lynxanalytics    # match: 1 role(s)
+# greenhouse monks    # match: 3 role(s)
+# greenhouse nice    # match: 2 role(s)
+# greenhouse okta    # match: 3 role(s)
+# greenhouse sigmoid    # match: 6 role(s)
+# greenhouse wppmedia    # match: 2 role(s)
+# lever beghouconsulting    # match: 4 role(s)
+# lever brighte    # match: 1 role(s)
+# lever hevodata    # match: 1 role(s)
+# lever mable    # match: 1 role(s)
+# ashby altis    # live, no current match
+# ashby amp    # live, no current match
+# ashby apexx    # live, no current match
+# ashby clickhouse    # live, no current match
+# ashby g2    # live, no current match
+# ashby humanarchive    # live, no current match
+# ashby kinetic    # live, no current match
+# ashby maincode    # live, no current match
+# ashby mercor    # live, no current match
+# ashby navi    # live, no current match
+# ashby ntegrity    # live, no current match
+# ashby numeric    # live, no current match
+# ashby podium    # live, no current match
+# ashby powerline    # live, no current match
+# ashby safetyculture    # live, no current match
+# ashby sequoia    # live, no current match
+# ashby shield-ai    # live, no current match
+# ashby sonitec    # live, no current match
+# ashby spotlight    # live, no current match
+# ashby wissen    # live, no current match
+# greenhouse apex    # live, no current match
+# greenhouse australianenergymarketoperator    # live, no current match
+# greenhouse blend    # live, no current match
+# greenhouse careem    # live, no current match
+# greenhouse catapultsports    # live, no current match
+# greenhouse clickhouse    # live, no current match
+# greenhouse cultureamp    # live, no current match
+# greenhouse deepintent    # live, no current match
+# greenhouse dunnhumby    # live, no current match
+# greenhouse ensono    # live, no current match
+# greenhouse geotab    # live, no current match
+# greenhouse glance    # live, no current match
+# greenhouse gruve    # live, no current match
+# greenhouse industrial    # live, no current match
+# greenhouse karbon    # live, no current match
+# greenhouse kinexus    # live, no current match
+# greenhouse neo4j    # live, no current match
+# greenhouse optiver    # live, no current match
+# greenhouse praetorianaeronautics    # live, no current match
+# greenhouse psiquantum    # live, no current match
+# greenhouse referralsonly    # live, no current match
+# greenhouse sas    # live, no current match
+# greenhouse seek    # live, no current match
+# greenhouse test    # live, no current match
+# greenhouse thoughtworks    # live, no current match
+# greenhouse towerresearchcapital    # live, no current match
+# greenhouse tripledotstudios    # live, no current match
+# greenhouse turing    # live, no current match
+# greenhouse woolpert    # live, no current match
+# lever abt    # live, no current match
+# lever amberelectric    # live, no current match
+# lever analyticpartners    # live, no current match
+# lever certifyos    # live, no current match
+# lever employ    # live, no current match
+# lever ion    # live, no current match
+# lever ippon    # live, no current match
+# lever jiostar    # live, no current match
+# lever kpmg    # live, no current match
+# lever meesho    # live, no current match
+# lever merklescience    # live, no current match
+# lever mindtickle    # live, no current match
+# lever palantir    # live, no current match
+# lever pattern    # live, no current match
+# lever portagepointpartners    # live, no current match
+# lever shieldai    # live, no current match
+# lever smarsh    # live, no current match
+# lever tsmg    # live, no current match

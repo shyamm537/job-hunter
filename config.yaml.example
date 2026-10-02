@@ -1,45 +1,62 @@
 # Copy this file to config.yaml and fill in your own values.
-# config.yaml is gitignored — it's meant to hold your personal search
-# criteria and resume summary, not something you commit.
+# config.yaml is gitignored — it holds your personal search criteria and
+# resume summary, not something you commit.
 
-# ── Where to look ──────────────────────────────────────────────────────────
-# Two ways to declare what gets scraped. Use ONE of them.
-#
-# (a) Legacy single search — one SEEK search. Kept for backward compatibility.
-search:
-  title: "data analyst"        # used to build the SEEK search URL
-  location: "Adelaide"         # e.g. Adelaide, Sydney, Remote
+# ── What you're looking for ─────────────────────────────────────────────────
+# Shared across every source. For SEEK, titles x locations become searches.
+# For ATS boards (Greenhouse/Lever/Ashby), they filter the fetched postings.
+# Empty lists mean "no filter". A posting in a "remote" location always passes
+# the location filter.
+filters:
+  titles:    ["data analyst", "data scientist"]
+  locations: ["Adelaide", "Sydney"]
 
-# (b) Preferred: a list of sources. Mix SEEK searches and Greenhouse boards,
-#     run as many as you like in one `make scrape`. If `sources` is present it
-#     takes precedence over the `search` block above.
-#
-# sources:
-#   - type: seek
-#     title: "data analyst"
-#     location: "Adelaide"
-#   - type: seek
-#     title: "data analyst"
-#     location: "Sydney"
-#   - type: greenhouse
-#     board: "stripe"            # the board token in boards.greenhouse.io/stripe
-#     title_contains: "data"     # optional: only keep titles containing this
+# ── Where to look ───────────────────────────────────────────────────────────
+# Sources are just "where". ATS boards (greenhouse/lever/ashby) are global —
+# they return a company's whole list and the location filter above keeps the
+# ones you want, so non-AU roles (e.g. India: "Bangalore", "Mumbai") come
+# through here. SEEK, by contrast, is an Australia/NZ board, so scope its
+# *search* locations with `locations:` (otherwise it uses filters.locations and
+# wastes searches on non-AU cities that return nothing).
+sources:
+  - type: seek
+    locations: ["Adelaide", "Sydney"]   # AU/NZ only; omit to use filters.locations
+  - type: greenhouse
+    board: "stripe"                  # token in boards.greenhouse.io/stripe
+  - type: lever
+    company: "figma"                 # token in jobs.lever.co/figma
+  - type: ashby
+    org: "ashby"                     # token in jobs.ashbyhq.com/ashby
+  - type: adzuna
+    country: "au"                    # one per country; needs the adzuna: creds below
+
+# Optionally keep a long list of boards in a separate file (see
+# sources.txt.example). Its sources are appended to the ones above.
+# sources_file: "sources.txt"
+
+# Legacy: a single SEEK search. Still works — it's treated as one seek source
+# plus a one-title/one-location filters block. Prefer filters + sources above.
+# search:
+#   title: "data analyst"
+#   location: "Adelaide"
 
 llm:
   backend: ollama               # only "ollama" is implemented today
   model: llama3                 # must be pulled already: `ollama pull llama3`
   host: http://localhost:11434
+  batch_size: 0                 # max jobs per `make process` run; 0 = whole queue
+  max_retries: 2                # extra tries after the first on a failed LLM call
+  retry_backoff: 1.0            # base seconds; waits retry_backoff * 2**attempt
 
-# ── Where to store it ──────────────────────────────────────────────────────
-# Optional. Defaults to sqlite:///data/jobs.db. Point at Postgres to scale:
-#   url: "postgresql+psycopg://user:pass@localhost:5432/jobs"
-# Can also be set via the JOBHUNTER_DATABASE_URL environment variable.
-database:
-  url: "sqlite:///data/jobs.db"
+# ── Adzuna search API (optional) ────────────────────────────────────────────
+# Sanctioned job-search API with a free tier; per-country (au, in, gb, ...), so
+# it reaches non-AU cities SEEK can't. Register free at developer.adzuna.com,
+# then add `adzuna au` / `adzuna in` sources. Omit this block to skip Adzuna.
+# adzuna:
+#   app_id: "YOUR_ADZUNA_APP_ID"
+#   app_key: "YOUR_ADZUNA_APP_KEY"
 
-resume_summary: >
-  Paste a 3-5 sentence summary of your background, skills, and the kind of
-  role you're targeting. This gets injected into every cover letter and
-  cold email prompt, so keep it factual — the LLM is instructed not to
-  invent experience, but it can only avoid that if you give it real
-  material to work from.
+# ── Where to store it ───────────────────────────────────────────────────────
+# Optional. Defaults to sqlite:///data/jobs.db. SQLite is the product; a
+# Postgres URL is an open-but-unverified escape hatch (see docs/configuration.md).
+# Can also be set via the JOBHUNTER_DATA

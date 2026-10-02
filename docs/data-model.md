@@ -15,6 +15,9 @@ class JobPost(SQLModel, table=True):
     status: str = Field(default="To Apply")
     generated_cover_letter: Optional[str] = None
     generated_cold_email: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_confidence: Optional[str] = None
 ```
 
 ## Field reference
@@ -32,12 +35,18 @@ class JobPost(SQLModel, table=True):
 | `status` | `str` | One of `To Apply`, `Applied`, `Interviewing`, `Rejected`. Plain string, not an enum — see "Known looseness" below. |
 | `generated_cover_letter` | `str \| None` | `None` is the queue signal: `pending_llm_jobs()` selects rows where this is null. |
 | `generated_cold_email` | `str \| None` | Generated alongside the cover letter, same LLM call cycle. |
+| `contact_name` | `str \| None` | A contact found in the posting's own text, or `None`. See [`docs/hiring-manager-lookup.md`](./hiring-manager-lookup.md). |
+| `contact_email` | `str \| None` | A published address or a flagged guess — never asserted as verified. `None` if none found. |
+| `contact_confidence` | `str \| None` | `"published"` / `"pattern-guess"` / `"none"`. **Also the queue signal:** `pending_contact_jobs()` selects rows where this is null, so a looked-up row (even a miss, set to `"none"`) leaves the queue. Free-text, like `status`. |
 
 ## Dedup strategy
 
-`job_board_id` is built as `f"{source}-{sha1(url)[:10]}"` (see `src/ingestion/seek.py`). Re-running `make scrape` against the same search will produce the same IDs for postings still live, so `upsert_job()` (`src/storage/database.py`) skips them instead of inserting duplicates.
+`job_board_id` is `f"{source}-{sha1(<key>)[:10]}"`. Re-running `make scrape` produces the same IDs for postings still live, so `upsert_job()` (`src/storage/database.py`) skips them instead of inserting duplicates. What goes into the hash depends on the source:
 
-This means: if a posting's URL changes (e.g. SEEK re-publishes it under a new listing ID), it will be treated as a new job, not an update to an old one. That's a known limitation, not a bug — there's no canonical job identity across re-postings.
+- **ATS boards (Greenhouse, Lever, Ashby)** and **SEEK** hash the posting URL directly.
+- **Adzuna** hashes only the *normalized* redirect URL — scheme + host + path, with the query string and fragment dropped (`_dedup_key()` in `src/ingestion/adzuna.py`). Adzuna's `redirect_url` carries per-search tracking params (`se`, `utm_*`, `where`), so the same ad surfaced by two different searches (e.g. two spellings of a city) would otherwise hash to two IDs. Stripping the query collapses those into one row. The full URL is still stored in the `url` field for the link; only the dedup key is normalized. This assumes Adzuna keeps the job's identity in the URL *path* — see the TODO item to switch Adzuna's key to its own stable `id` field, which removes that assumption.
+
+This means: if a posting's *identifying* URL changes (e.g. a board re-publishes it under a new listing ID), it's treated as a new job, not an update to an old one. That's a known limitation, not a bug — there's no canonical job identity across re-postings. Dedup is also per-source: the same role posted to two different boards is two rows (different URLs, different `<source>-` prefix).
 
 ## Status lifecycle
 

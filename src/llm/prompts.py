@@ -20,9 +20,9 @@ background.
 """
 
 COLD_EMAIL_TEMPLATE = """Write a brief, direct cold email (under 150 words) to a
-hiring manager at {company} about the {title} role. Reference one specific
-detail from the job description below. No generic flattery, no filler
-sign-off.
+hiring manager at {company} about the {title} role. Open the email with this
+greeting line exactly: "{greeting}". Reference one specific detail from the job
+description below. No generic flattery, no filler sign-off.
 
 Job description:
 {description}
@@ -30,3 +30,15 @@ Job description:
 Candidate background:
 {resume_summary}
 """
+
+
+def cold_email_greeting(contact_name: str | None) -> str:
+    """Greeting line for the cold email. Uses the looked-up contact's first
+    name when we have one; otherwise the generic fallback (today's behaviour).
+
+    Only the *name* is used here — the candidate email address lives on the
+    JobPost row and in the dashboard, not in the body text."""
+    if contact_name:
+        first = contact_name.split()[0]
+        return f"Hi {first},"
+    return "Hi,"
