@@ -5,7 +5,7 @@ Mirrors the sequence in the root README, with more detail on what "done" means p
 ## Done
 
 1. **`JobPost` schema + SQLite storage** — `src/storage/models.py`, `src/storage/database.py`. Tested (`tests/test_models.py`).
-2. **One working scraper (SEEK public feed)** — `src/ingestion/seek.py`, implementing `BaseScraper`. Tested with mocked feed data (`tests/test_seek_scraper.py`).
+2. **One working scraper (SEEK public feed)** — `src/ingestion/seek.py`, implementing `BaseScraper`. The feed went dead on 2026-06-20 and the scraper was removed in KAN-32; Adzuna is the search source now.
 3. **LLM client wrapper + prompt templates** — `src/llm/client.py`, `src/llm/prompts.py`. Not yet tested against a real Ollama instance in CI (no Ollama available there).
 4. **`make process` queue consumer** — `src/llm/cli.py`. Same caveat: logic is sound, untested against a live model.
 5. **Streamlit dashboard** — `src/app/main.py`. Read-only view plus status updates. Not tested (no UI test harness set up).

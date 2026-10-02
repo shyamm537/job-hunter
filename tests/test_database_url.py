@@ -25,7 +25,10 @@ def _reset_db_state(monkeypatch):
 
 def _config_returning(url: str):
     cfg = config.Config.model_validate(
-        {"search": {"title": "x"}, "database": {"url": url}}
+        {
+            "sources": [{"type": "greenhouse", "board": "acme"}],
+            "database": {"url": url},
+        }
     )
     return lambda *args, **kwargs: cfg
 

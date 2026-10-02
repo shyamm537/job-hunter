@@ -15,13 +15,13 @@ Each layer only talks to the one next to it. `app/main.py` never imports a scrap
 
 ### 1. Strategy Pattern for scrapers
 
-`src/ingestion/base_scraper.py` defines `BaseScraper`, an `abc.ABC` with one abstract method: `scrape() -> List[JobPost]`. There are five concrete implementations: `src/ingestion/adzuna.py` (Adzuna search API — the live search source), `src/ingestion/seek.py` (SEEK public RSS — dead feed, kept as the worked example), and three ATS board readers, `greenhouse.py`, `lever.py`, and `ashby.py` (public board JSON APIs).
+`src/ingestion/base_scraper.py` defines `BaseScraper`, an `abc.ABC` with one abstract method: `scrape() -> List[JobPost]`. There are four concrete implementations: `src/ingestion/adzuna.py` (Adzuna search API — the search source) and three ATS board readers, `greenhouse.py`, `lever.py`, and `ashby.py` (public board JSON APIs).
 
 The contract is deliberately thin — a scraper takes whatever constructor args it needs and returns a list of `JobPost` objects. It's a pure fetcher: it doesn't talk to the database, and it doesn't know about filters. `src/ingestion/planner.py` (`plan_scrapes`) is the one place that turns validated `sources` + `filters` into concrete scrapers, so the CLI loops over `PlannedScrape` items without knowing their concrete types. (`src/ingestion/factory.py` is now a thin deprecation shim re-exporting the planner.)
 
-What you want (titles, locations) is kept separate from where you look (sources), because the two source kinds use the intent differently: SEEK is a search engine, so each `(title, location)` pair becomes one search; an ATS board returns a company's whole list, so the planner marks it for post-filtering by `src/ingestion/filtering.py`.
+What you want (titles, locations) is kept separate from where you look (sources), because the two source kinds use the intent differently: Adzuna is a search engine, so each `(title, location)` pair becomes one search; an ATS board returns a company's whole list, so the planner marks it for post-filtering by `src/ingestion/filtering.py`.
 
-Why this matters in practice: if SEEK changes its RSS feed format, only `seek.py` changes. The Greenhouse and Lever scrapers prove the abstraction holds — totally different transports (JSON APIs vs. RSS), yet `BaseScraper`, the CLI, and storage didn't change shape to absorb them. Adding a source (see [`docs/scrapers.md`](./scrapers.md)) is a new file, a config model, and one branch in the planner.
+Why this matters in practice: if Adzuna changes its API, only `adzuna.py` changes. The abstraction has held through very different transports — the original SEEK scraper read an RSS feed (removed in KAN-32 after the feed died), the others read JSON APIs of different shapes — yet `BaseScraper`, the CLI, and storage didn't change shape to absorb them. Adding a source (see [`docs/scrapers.md`](./scrapers.md)) is a new file, a config model, and one branch in the planner.
 
 ### 2. Database-backed queue instead of asyncio
 
@@ -45,7 +45,7 @@ Today `backend: ollama` is the only valid value — anything else raises `ValueE
 
 ![Architecture Flowchart](image.png)
 
-1. `make scrape` → `plan_scrapes(sources, filters)` expands SEEK sources into one search per `(title, location)` and marks ATS boards for post-filtering → each planned scrape runs, ATS results are filtered by `job_matches()` → `upsert_job()` dedupes against `job_board_id` and inserts new rows. One planned scrape failing is logged and skipped, not fatal.
+1. `make scrape` → `plan_scrapes(sources, filters)` expands Adzuna sources into one search per `(title, location)` and marks ATS boards for post-filtering → each planned scrape runs, ATS results are filtered by `job_matches()` → `upsert_job()` dedupes against `job_board_id` and inserts new rows. One planned scrape failing is logged and skipped, not fatal.
 2. `make process` → `pending_llm_jobs()` finds rows with no cover letter → `OllamaClient.generate()` is called twice per job (cover letter, cold email) using templates from `src/llm/prompts.py` → results written back to the same row.
 3. `make app` → Streamlit reads all rows, renders one expander per job, lets you change `status` inline.
 

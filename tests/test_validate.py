@@ -1,10 +1,10 @@
 from unittest.mock import patch
 
 from src.config import (
+    AdzunaSource,
     Filters,
     GreenhouseSource,
     LeverSource,
-    SeekSource,
     source_to_line,
 )
 from src.ingestion import validate as V
@@ -22,9 +22,9 @@ def _jobs(*specs):
 F = Filters(titles=["data analyst"], locations=["Remote"])
 
 
-def test_seek_is_live_without_a_network_call():
+def test_adzuna_is_live_without_a_network_call():
     # No scrape patched: if it tried to hit the network the test would fail.
-    r = V.validate_source(SeekSource(), F)
+    r = V.validate_source(AdzunaSource(type="adzuna", country="au"), F)
     assert r.live is True and r.status == "live" and r.total == 0
 
 
@@ -61,19 +61,20 @@ def test_kept_filters_to_live_then_to_matching():
         GreenhouseSource(type="greenhouse", board="b"), "b", True, 5, 0, None)
     dead = V.ValidationResult(
         GreenhouseSource(type="greenhouse", board="c"), "c", False, 0, 0, "err")
-    seek = V.ValidationResult(SeekSource(), "seek", True, 0, 0, None)
-    results = [live_match, live_only, dead, seek]
+    adzuna = V.ValidationResult(
+        AdzunaSource(type="adzuna", country="au"), "adzuna", True, 0, 0, None)
+    results = [live_match, live_only, dead, adzuna]
 
-    # Default: keep every live board + seek, drop dead.
+    # Default: keep every live board + the search source, drop dead.
     kept = V._kept(results, require_match=False)
-    assert {r.label for r in kept} == {"a", "b", "seek"}
+    assert {r.label for r in kept} == {"a", "b", "adzuna"}
 
-    # require_match: only boards with a current match (+ seek).
+    # require_match: only boards with a current match (+ the search source).
     kept = V._kept(results, require_match=True)
-    assert {r.label for r in kept} == {"a", "seek"}
+    assert {r.label for r in kept} == {"a", "adzuna"}
 
 
 def test_source_to_line_roundtrips():
-    assert source_to_line(SeekSource()) == "seek"
+    assert source_to_line(AdzunaSource(type="adzuna", country="in")) == "adzuna in"
     assert source_to_line(GreenhouseSource(type="greenhouse", board="stripe")) == "greenhouse stripe"
     assert source_to_line(LeverSource(type="lever", company="metabase")) == "lever metabase"

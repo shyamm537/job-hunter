@@ -3,13 +3,13 @@
 A months-long hunt shouldn't be capped at a static board list, but auto-adding
 *random* boards is the firehose `TODO.md` rejects — it grows noise, not signal.
 This grows the list from companies that ALREADY appear in your search-source
-results (SEEK/Adzuna) for your roles, so every candidate is relevant by construction. It then validates
+results (Adzuna) for your roles, so every candidate is relevant by construction. It then validates
 each against the live ATS APIs and writes the confirmed-live ones as **commented
 proposals** for you to approve (uncomment) — never auto-adding. See
 docs/board-discovery.md.
 
-This runs AFTER `make scrape`, not before: it mines the SEEK postings scrape
-already collected. It mines SEEK specifically because that's the source that
+This runs AFTER `make scrape`, not before: it mines the Adzuna postings scrape
+already collected. It mines Adzuna specifically because that's the source that
 surfaces companies you don't already have a board for — mining your Greenhouse/
 Lever rows would just re-derive tokens already in sources.txt.
 
@@ -125,14 +125,11 @@ def new_candidates(names: List[str], already: Set[str]) -> List[Source]:
 def search_companies(session) -> List[str]:
     """Distinct company names from search-source postings already in the DB.
 
-    Search sources (SEEK, Adzuna) surface companies you don't already have a
+    The search source (Adzuna) surfaces companies you don't already have a
     board for; ATS rows are companies you do, so they're excluded. Rows are
-    identified by their `seek-` / `adzuna-` job_board_id prefix."""
+    identified by their `adzuna-` job_board_id prefix."""
     rows = session.exec(
-        select(JobPost.company).where(
-            JobPost.job_board_id.like("seek-%")
-            | JobPost.job_board_id.like("adzuna-%")
-        )
+        select(JobPost.company).where(JobPost.job_board_id.like("adzuna-%"))
     ).all()
     seen: List[str] = []
     for c in rows:
@@ -178,7 +175,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     setup_logging()
     parser = argparse.ArgumentParser(
         prog="python -m src.ingestion.discover",
-        description="Propose ATS boards from companies in your SEEK results.",
+        description="Propose ATS boards from companies in your Adzuna results.",
     )
     parser.add_argument(
         "--out", default="sources.discovered.txt",
@@ -208,15 +205,14 @@ def main(argv: Optional[List[str]] = None) -> None:
         if total == 0:
             msg = "No postings in the database yet — run `make scrape` first."
         else:
-            # Common case: the DB has ATS rows but no SEEK rows. Discovery mines
-            # SEEK results (the source that surfaces companies you don't already
-            # have a board for), so ATS-only data gives it nothing to work with.
+            # Common case: the DB has ATS rows but no Adzuna rows. Discovery
+            # mines Adzuna results (the source that surfaces companies you don't
+            # already have a board for), so ATS-only data gives it nothing.
             msg = (
-                f"Found {total} posting(s), but none from a search source "
-                "(SEEK/Adzuna). Discovery mines those for companies you don't "
-                "already have a board for. SEEK's public RSS is dead; set up "
-                "Adzuna (an 'adzuna:' creds block + an 'adzuna' source) so there's "
-                "a working feeder, then `make scrape`. See docs/board-discovery.md."
+                f"Found {total} posting(s), but none from Adzuna. Discovery mines "
+                "those for companies you don't already have a board for. Set up "
+                "Adzuna (an 'adzuna:' creds block + an 'adzuna' source), then "
+                "`make scrape`. See docs/board-discovery.md."
             )
         print(msg, file=sys.stderr)
         raise SystemExit(1)

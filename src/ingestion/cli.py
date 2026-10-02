@@ -4,10 +4,10 @@ Reads config.yaml, plans concrete scrapes from (sources x filters), runs each,
 and writes new postings into the database. Run this, then `make process` to
 generate materials, then `make app` to view everything.
 
-SEEK sources expand into one search per (title, location); ATS boards
-(Greenhouse, Lever) are scraped whole and then filtered by the same titles and
-locations. Each planned scrape runs independently — one failing (network error,
-bad token) is logged and skipped, not fatal.
+Adzuna sources expand into one search per (title, location); ATS boards
+(Greenhouse, Lever, Ashby) are scraped whole and then filtered by the same
+titles and locations. Each planned scrape runs independently — one failing
+(network error, bad token) is logged and skipped, not fatal.
 
 Set JOBHUNTER_DUMP_DIR to capture each scrape's *unfiltered* output to JSON
 (see src/ingestion/capture.py) — handy when a filter is eating everything, and
@@ -32,17 +32,21 @@ def main() -> None:
 
     try:
         config = load_config()
+        sources = config.resolved_sources
+        if not sources:
+            raise ConfigError(
+                "No sources configured: add at least one active line to "
+                f"{config.sources_file or 'sources'} (e.g. 'adzuna au' or "
+                "'greenhouse <board>'). See sources.txt.example."
+            )
+        filters = config.resolved_filters
+        plans = plan_scrapes(sources, filters, adzuna_auth=config.adzuna_auth)
     except ConfigError as exc:
         print(exc, file=sys.stderr)
         raise SystemExit(1)
 
     set_database_url(config.database.url)
     init_db()
-
-    filters = config.resolved_filters
-    plans = plan_scrapes(
-        config.resolved_sources, filters, adzuna_auth=config.adzuna_auth
-    )
 
     dump_dir = resolve_dump_dir()
     if dump_dir:

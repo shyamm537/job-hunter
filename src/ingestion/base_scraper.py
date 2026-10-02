@@ -13,7 +13,7 @@ from src.storage.models import JobPost
 
 
 class BaseScraper(ABC):
-    #: Short identifier used in job_board_id and logging, e.g. "seek".
+    #: Short identifier used in job_board_id and logging, e.g. "greenhouse".
     source_name: str = "unknown"
 
     @abstractmethod

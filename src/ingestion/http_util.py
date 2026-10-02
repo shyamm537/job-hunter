@@ -1,10 +1,8 @@
 """Small shared HTTP helper for scrapers.
 
-`SeekScraper` makes a single feed request and uses feedparser directly, so
-it doesn't need this. Anything that hits a JSON/HTTP API (like the
-Greenhouse scraper) goes through `get_json()` for one consistent place to
-handle timeouts, a polite User-Agent, and a couple of retries with
-backoff. This is the "rate limiting / politeness" seam noted as missing in
+Anything that hits a JSON/HTTP API (like the Greenhouse scraper) goes through
+`get_json()` for one consistent place to handle timeouts, a polite User-Agent,
+and a couple of retries with backoff. This is the "rate limiting / politeness" seam noted as missing in
 docs/scrapers.md.
 """
 

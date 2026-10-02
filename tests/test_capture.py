@@ -32,9 +32,9 @@ def test_dump_jobs_writes_valid_json(tmp_path):
 
 
 def test_dump_filename_is_slugged(tmp_path):
-    path = dump_jobs("seek[data analyst @ Adelaide]", [_job(1)], str(tmp_path))
+    path = dump_jobs("adzuna[au: data analyst @ Adelaide]", [_job(1)], str(tmp_path))
     name = os.path.basename(path)
-    assert name.startswith("seek-data-analyst-adelaide-")
+    assert name.startswith("adzuna-au-data-analyst-adelaide-")
     assert name.endswith(".json")
 
 
@@ -69,7 +69,7 @@ def test_new_temp_dump_dir_exists():
 
 def test_dump_creates_missing_dir(tmp_path):
     nested = tmp_path / "a" / "b"
-    path = dump_jobs("seek", [_job(1)], str(nested))
+    path = dump_jobs("adzuna", [_job(1)], str(nested))
     assert os.path.exists(path)
 
 

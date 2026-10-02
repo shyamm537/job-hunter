@@ -31,7 +31,7 @@ def _seed(n: int) -> None:
         for i in range(n):
             session.add(
                 JobPost(
-                    job_board_id=f"seek-{i}",
+                    job_board_id=f"adzuna-{i}",
                     title="Data Analyst",
                     company=f"Acme {i}",
                     location="Remote",

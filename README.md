@@ -1,6 +1,6 @@
 # Job Hunter AI
 
-A local-first job application pipeline: discover and scrape postings across SEEK, Adzuna, and ATS boards (Greenhouse, Lever, Ashby), store them in a database, look up a public contact for each posting, generate tailored cover letters and cold emails with a local LLM, and track application status — all from a Streamlit dashboard.
+A local-first job application pipeline: discover and scrape postings across Adzuna and ATS boards (Greenhouse, Lever, Ashby), store them in a database, look up a public contact for each posting, generate tailored cover letters and cold emails with a local LLM, and track application status — all from a Streamlit dashboard.
 
 No cloud dependency required. Runs on SQLite + Ollama by default. SQLite is the product; Postgres is a documented escape hatch that would need a real test pass before you trusted it (the URL is configurable and the abstraction can speak Postgres, but that path is unverified and no driver is pinned — see [`docs/configuration.md`](docs/configuration.md) and `TODO.md`). A hosted LLM is likewise an open, not-yet-built option.
 
@@ -27,11 +27,10 @@ job-hunter-ai/
 │   ├── logging_config.py    # One-call structured logging setup
 │   ├── ingestion/           # Scraper module (Strategy Pattern)
 │   │   ├── base_scraper.py  # Abstract base class — defines .scrape()
-│   │   ├── seek.py          # SEEK public RSS search — DEAD, see "Scraping: scope and ethics" below
 │   │   ├── greenhouse.py    # Greenhouse public board API (ATS)
 │   │   ├── lever.py         # Lever public board API (ATS)
 │   │   ├── ashby.py         # Ashby public board API (ATS)
-│   │   ├── adzuna.py        # Adzuna search API — per-country, replaces dead SEEK
+│   │   ├── adzuna.py        # Adzuna search API — per-country (AU, India, ...)
 │   │   ├── planner.py       # Expands sources × filters → planned scrapes
 │   │   ├── filtering.py     # Title/location filters applied to ATS results
 │   │   ├── capture.py       # Dump unfiltered scrape output (debug/fixtures)
@@ -63,9 +62,9 @@ job-hunter-ai/
 
 ### Design decisions worth knowing about
 
-**Strategy Pattern for scrapers.** `BaseScraper` is an `abc.ABC` with one required method, `.scrape()`. Each job board gets its own subclass and is a pure fetcher — no DB access, no awareness of filters. Five scrapers exist today (SEEK, Greenhouse, Lever, Ashby, Adzuna); adding another is a new file, a config model, and a branch in the planner.
+**Strategy Pattern for scrapers.** `BaseScraper` is an `abc.ABC` with one required method, `.scrape()`. Each job board gets its own subclass and is a pure fetcher — no DB access, no awareness of filters. Four scrapers exist today (Adzuna, Greenhouse, Lever, Ashby); adding another is a new file, a config model, and a branch in the planner.
 
-**Filters are separate from sources.** `config.yaml` splits *what* you want (`filters.titles`, `filters.locations`) from *where* you look (`sources` / `sources_file`). SEEK and Adzuna are search engines, so each `(title, location)` pair becomes a query. ATS boards (Greenhouse, Lever, Ashby) return a company's whole list, so the same filters are applied to the results afterwards. `src/ingestion/planner.py` is what combines the two. See `docs/configuration.md`.
+**Filters are separate from sources.** `config.yaml` splits *what* you want (`filters.titles`, `filters.locations`) from *where* you look (`sources` / `sources_file`). Adzuna is a search engine, so each `(title, location)` pair becomes a query. ATS boards (Greenhouse, Lever, Ashby) return a company's whole list, so the same filters are applied to the results afterwards. `src/ingestion/planner.py` is what combines the two. See `docs/configuration.md`.
 
 **Queue via the database, not asyncio.** Streamlit's threading model doesn't play well with background async workers updating UI state — you end up fighting race conditions for no real benefit at this scale. Instead, each stage writes rows with the next stage's column left `NULL`, and a separate CLI script selects exactly those rows, does its work, and writes back: `make scrape` leaves `generated_cover_letter`/`contact_confidence` null, `make contacts` fills `contact_*` (queue: `contact_confidence IS NULL`), `make process` fills the generated materials (queue: `generated_cover_letter IS NULL`). Streamlit only ever reads from the database, plus simple status-field edits. No in-flight state to lose, and any step can be re-run safely.
 
@@ -87,7 +86,7 @@ Out of scope:
 - Bypassing bot detection or CAPTCHAs
 - Data-broker / email-finder APIs for the contact lookup (see below)
 
-**SEEK's public RSS feed is dead** (confirmed: it returns zero results for every query as of 2026-06-20). It's left in the codebase — `src/ingestion/seek.py` still works against the feed format, and a `seek` source is still a one-line re-enable in `sources.txt` if the feed ever comes back — but it is **not** a working source right now. Treat any documentation that describes SEEK as a live source as describing intent, not current behavior. **Adzuna** (`src/ingestion/adzuna.py`) replaces it as the search/aggregator source: it's a sanctioned API with a free tier, reaches India as well as Australia, and just needs free credentials from developer.adzuna.com in `config.yaml`'s `adzuna:` block. See `docs/configuration.md` and [`docs/scrapers.md`](docs/scrapers.md).
+**SEEK is not a source.** It was the original search source, via its public RSS feed, until that feed went dead (zero results for every query from 2026-06-20); the scraper was removed in KAN-32, and a leftover `seek` line in `sources.txt` now fails as an unknown source. **Adzuna** (`src/ingestion/adzuna.py`) is the search/aggregator source: it's a sanctioned API with a free tier, reaches India as well as Australia, and just needs free credentials from developer.adzuna.com in `config.yaml`'s `adzuna:` block. See `docs/configuration.md` and [`docs/scrapers.md`](docs/scrapers.md).
 
 The **contact lookup** (`make contacts`, below) follows the same ethic: it reads only text a company already published in its own posting, makes no network calls, and never queries a data broker (Hunter, Apollo, RocketReach, ZoomInfo, etc.) or a logged-in source. A guessed address is always flagged as a guess, never asserted as verified. See [`docs/hiring-manager-lookup.md`](docs/hiring-manager-lookup.md).
 
@@ -120,7 +119,7 @@ class JobPost(SQLModel, table=True):
 ### Prerequisites
 - Python 3.11+
 - [Ollama](https://ollama.com) installed locally, with a model pulled (e.g. `ollama pull llama3.2:3b-instruct-q4_K_M`)
-- (Optional, recommended) free Adzuna API credentials from [developer.adzuna.com](https://developer.adzuna.com) — SEEK is dead, so Adzuna is the working search source
+- (Optional, recommended) free Adzuna API credentials from [developer.adzuna.com](https://developer.adzuna.com) — Adzuna is the only search source; without it you only get the ATS boards in `sources.txt`
 
 ### Setup
 
@@ -190,7 +189,7 @@ pytest tests/
 This is being built incrementally. Rough sequence:
 
 1. `JobPost` schema + SQLite storage (done)
-2. One working scraper (SEEK public feed) implementing `BaseScraper` — built, but the feed itself has since gone dead (see "Scraping: scope and ethics")
+2. One working scraper (SEEK public feed) implementing `BaseScraper` — the feed later went dead and the scraper was removed (KAN-32)
 3. LLM client wrapper + cover letter / cold email prompt templates (done)
 4. `make process` queue consumer (done)
 5. Streamlit dashboard (read-only view + status updates) (done)
@@ -200,7 +199,7 @@ This is being built incrementally. Rough sequence:
 9. `database.url` wired through (SQLite default, Postgres via config or `JOBHUNTER_DATABASE_URL`) (done)
 10. `filters` / `sources` split + `sources_file` (plain-text board list, careers-URL auto-detection) (done)
 11. Lever and Ashby scrapers — third and fourth ATS sources (done)
-12. Adzuna scraper — sanctioned search API replacing the dead SEEK feed, reaches AU + India (done)
+12. Adzuna scraper — sanctioned search API, the replacement for the SEEK feed, reaches AU + India (done)
 13. Board validation (`make validate`) and discovery (`make discover`) — keep the board list live and growing without a noise-adding firehose (done)
 14. Hiring-contact lookup v1 (`make contacts`) — public, in-posting-text only; shown with a confidence flag in the dashboard (done)
 15. `capture`/`JOBHUNTER_DUMP_DIR` debug dumping of unfiltered scrape output (done)

@@ -1,15 +1,14 @@
 """Adzuna scraper — reads Adzuna's official public job-search API.
 
-Adzuna replaces SEEK as the search/aggregator source (SEEK's public RSS went
-dead). Unlike SEEK it's a sanctioned API with a free tier, and it's per-country,
-so it can reach India as well as Australia:
+Adzuna is the search/aggregator source. It's a sanctioned API with a free
+tier, and it's per-country, so it can reach India as well as Australia:
 
     https://api.adzuna.com/v1/api/jobs/<country>/search/<page>
         ?app_id=...&app_key=...&what=<title>&where=<location>&results_per_page=50
 
 `<country>` is a path segment (au, in, gb, ...). Credentials (app_id/app_key)
 come from the top-level `adzuna:` config block; register free at
-developer.adzuna.com. Like SEEK, it's a *search* source: each (title, location)
+developer.adzuna.com. It's a *search* source: each (title, location)
 is one query, so the planner expands filters into queries and does NOT
 post-filter (the query already narrowed it).
 

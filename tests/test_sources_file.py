@@ -3,12 +3,12 @@ import textwrap
 import pytest
 
 from src.config import (
+    AdzunaSource,
     AshbySource,
     Config,
     ConfigError,
     GreenhouseSource,
     LeverSource,
-    SeekSource,
     load_sources_file,
     source_from_url,
 )
@@ -28,7 +28,7 @@ def test_parses_sources(tmp_path):
         greenhouse stripe
         lever figma
         ashby ashby
-        seek
+        adzuna in
         """,
     )
     srcs = load_sources_file(path)
@@ -36,14 +36,17 @@ def test_parses_sources(tmp_path):
     assert isinstance(srcs[0], GreenhouseSource) and srcs[0].board == "stripe"
     assert isinstance(srcs[1], LeverSource) and srcs[1].company == "figma"
     assert isinstance(srcs[2], AshbySource) and srcs[2].org == "ashby"
-    assert isinstance(srcs[3], SeekSource)
+    assert isinstance(srcs[3], AdzunaSource) and srcs[3].country == "in"
 
 
-def test_seek_with_args_raises(tmp_path):
-    path = _write(tmp_path, 'seek "data analyst" Adelaide\n')
+def test_leftover_seek_line_is_an_unknown_source(tmp_path):
+    # SEEK was removed (KAN-32); an old sources.txt still saying `seek` must
+    # fail with the line number rather than be silently skipped.
+    path = _write(tmp_path, "greenhouse stripe\nseek\n")
     with pytest.raises(ConfigError) as exc:
         load_sources_file(path)
-    assert "takes no arguments" in str(exc.value)
+    assert "line 2" in str(exc.value)
+    assert "unknown source type 'seek'" in str(exc.value)
 
 
 def test_greenhouse_missing_token_raises(tmp_path):
@@ -143,7 +146,7 @@ def test_sources_file_accepts_urls(tmp_path):
         https://jobs.lever.co/metabase
         https://jobs.ashbyhq.com/ramp
         greenhouse airbnb
-        seek
+        adzuna
         """,
     )
     srcs = load_sources_file(path)
@@ -152,7 +155,7 @@ def test_sources_file_accepts_urls(tmp_path):
     assert isinstance(srcs[1], LeverSource) and srcs[1].company == "metabase"
     assert isinstance(srcs[2], AshbySource) and srcs[2].org == "ramp"
     assert isinstance(srcs[3], GreenhouseSource) and srcs[3].board == "airbnb"
-    assert isinstance(srcs[4], SeekSource)
+    assert isinstance(srcs[4], AdzunaSource) and srcs[4].country == "au"
 
 
 def test_sources_file_bad_url_names_line(tmp_path):

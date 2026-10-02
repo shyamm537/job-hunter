@@ -3,7 +3,7 @@ from src.storage.models import JobPost
 
 def test_jobpost_defaults():
     job = JobPost(
-        job_board_id="seek-test123",
+        job_board_id="adzuna-test123",
         title="Data Analyst",
         company="Acme",
         location="Adelaide",

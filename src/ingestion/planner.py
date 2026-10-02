@@ -4,7 +4,7 @@ Sources say *where* to look; the global `filters` say *what* you're after.
 This module combines them per source type, because the two kinds use the
 intent differently:
 
-- SEEK / Adzuna are search engines: each (title, location) pair becomes one
+- Adzuna is a search engine: each (title, location) pair becomes one
   search, so a single search source expands into len(titles) x len(locations)
   scrapers. Nothing to post-filter — the query already did it.
 - An ATS board (Greenhouse, Lever, Ashby) returns a company's whole list, so we
@@ -20,13 +20,12 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from src.config import DEFAULT_LOCATION, ConfigError, Filters, Source
-from src.config import AshbySource, LeverSource, GreenhouseSource, SeekSource, AdzunaSource
+from src.config import AshbySource, LeverSource, GreenhouseSource, AdzunaSource
 from src.ingestion.adzuna import AdzunaScraper, country_of
 from src.ingestion.ashby import AshbyScraper
 from src.ingestion.base_scraper import BaseScraper
 from src.ingestion.greenhouse import GreenhouseScraper
 from src.ingestion.lever import LeverScraper
-from src.ingestion.seek import SeekScraper
 
 log = logging.getLogger("jobhunter.plan")
 
@@ -36,28 +35,8 @@ class PlannedScrape:
     scraper: BaseScraper
     label: str
     # Whether to apply the title/location filters to results after scraping.
-    # True for ATS boards, False for SEEK/Adzuna (their query already filtered).
+    # True for ATS boards, False for Adzuna (its query already filtered).
     post_filter: bool
-
-def plan_seek(
-    source: SeekSource,
-    titles: List[str],
-    locations: List[str],
-    adzuna_auth: Optional[Tuple[str, str]] = None,
-) -> List[PlannedScrape]:
-    if not titles:
-        log.warning("SEEK source skipped: no filters.titles defined to search for")
-        return []
-    seek_locations = source.locations or locations
-    return [
-        PlannedScrape(
-            SeekScraper(search_terms=title, location=location),
-            f"seek[{title} @ {location}]",
-            post_filter=False,
-        )
-        for title in titles
-        for location in seek_locations
-    ]
 
 
 def plan_adzuna(
@@ -147,7 +126,6 @@ def plan_ashby(
 
 
 SOURCE_PLANNERS = {
-    "seek": plan_seek,
     "adzuna": plan_adzuna,
     "greenhouse": plan_greenhouse,
     "lever": plan_lever,
