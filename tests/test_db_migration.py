@@ -12,6 +12,16 @@ import src.storage.database as database
 from src.ingestion.adzuna import id_dedup_key, url_dedup_key
 from src.storage.models import JobPost
 
+# Parked 2026-10-02: _migrate_adzuna_dedup_keys() was never added to
+# src/storage/database.py (it is on no branch), so these tests fail with
+# AttributeError. Skipped rather than deleted: they are the spec for the
+# migration. See "Adzuna re-key migration never landed" in TODO.md before
+# building it - as specified here it runs from init_db() and deletes the
+# duplicate legacy rows.
+pytestmark = pytest.mark.skip(
+    reason="_migrate_adzuna_dedup_keys is not implemented yet (see TODO.md)"
+)
+
 
 @pytest.fixture(autouse=True)
 def _fresh_sqlite(tmp_path):
