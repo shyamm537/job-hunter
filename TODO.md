@@ -1,7 +1,7 @@
 # TODO
 
 Working tracker for what's left and what's next. Kept updated as things change.
-(This file is gitignored on purpose.)
+(This file is tracked in git.)
 
 Status key: `[ ]` not started · `[~]` partial · `[x]` done (kept briefly for context)
 
@@ -39,8 +39,9 @@ then pull from the backlog.
    Adzuna, 221 Greenhouse, 8 Lever) and none marked dead. Nothing except
    `check_links.py` reads `dead_at`.
 
-   - [~] **Step 0 - green baseline.** Code done 2026-10-02, commit still to
-     do. 9 tests failed before any of this work; now 133 pass, 4 skipped.
+   - [x] **Step 0 - green baseline.** Done 2026-10-02, merged as PR #12
+     (`chore/green-baseline`). 9 tests failed before any of this work; now
+     133 pass, 4 skipped.
      - `"level"` typo for `"lever"` in `source_from_url()` (`src/config.py`)
        fixed (4 tests).
      - `src/ingestion/factory.py` is now the re-export shim its docstring
@@ -49,8 +50,6 @@ then pull from the backlog.
        `_migrate_adzuna_dedup_keys`, which isn't in `src/storage/database.py`
        on any branch. Skipped with a reason, not fixed - see "Adzuna re-key
        migration never landed" in the backlog.
-     - Open: commit this together with the pending planner/config edits, from
-       Windows git (from a Linux shell 57 files differ by line endings only).
    - [ ] **Step 1 - schema.** Add nullable `last_seen_at`, `last_checked_at`,
      `dead_reason` to `JobPost`. Register them and `dead_at` in
      `_ADDED_COLUMNS` (an older DB currently fails with "no such column:
