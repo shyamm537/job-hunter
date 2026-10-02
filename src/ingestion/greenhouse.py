@@ -20,6 +20,7 @@ import hashlib
 from typing import List, Optional
 
 from src.ingestion.base_scraper import BaseScraper
+from src.ingestion.dates import parse_posted_at
 from src.ingestion.http_util import get_json
 from src.storage.models import JobPost
 
@@ -55,6 +56,14 @@ class GreenhouseScraper(BaseScraper):
 
             location = (entry.get("location") or {}).get("name", "")
 
+            # `first_published`, else `updated_at`: ISO 8601 with a UTC offset,
+            # e.g. "2026-06-14T10:55:28-04:00". Field names from Greenhouse's
+            # public Job Board API docs; not checked against the live API from
+            # this environment. None if both are absent/unparseable.
+            posted_at = parse_posted_at(
+                entry.get("first_published")
+            ) or parse_posted_at(entry.get("updated_at"))
+
             jobs.append(
                 JobPost(
                     job_board_id=job_board_id,
@@ -65,6 +74,7 @@ class GreenhouseScraper(BaseScraper):
                     location=location,
                     description=entry.get("content", ""),
                     url=url,
+                    posted_at=posted_at,
                 )
             )
 

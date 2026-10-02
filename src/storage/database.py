@@ -23,10 +23,11 @@ hasn't happened.
 
 import os
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator, List, NamedTuple, Optional, Sequence
 
-from sqlalchemy import or_, text
+from sqlalchemy import func, or_, text, update
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from src.config import DEFAULT_DATABASE_URL
@@ -100,6 +101,13 @@ _ADDED_COLUMNS = {
     "contact_name": "TEXT",
     "contact_email": "TEXT",
     "contact_confidence": "TEXT",
+    # dead_at was added to the model by hand without being registered here, so
+    # an older database failed with "no such column: dead_at".
+    "dead_at": "DATETIME",
+    "dead_reason": "TEXT",
+    "posted_at": "DATETIME",
+    "last_seen_at": "DATETIME",
+    "last_checked_at": "DATETIME",
 }
 
 
@@ -124,23 +132,195 @@ def get_session() -> Iterator[Session]:
         session.close()
 
 
+def utcnow() -> datetime:
+    """Naive UTC "now" — the convention for every datetime column here
+    (date_scraped, dead_at, posted_at, last_seen_at, last_checked_at)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def upsert_job(session: Session, job: JobPost) -> tuple[JobPost, bool]:
-    """Insert a job if new; otherwise return the existing row untouched.
+    """Insert a job if new; otherwise record that the existing row was seen.
 
     job_board_id is the dedup key, so re-running a scrape never duplicates
     postings. Returns (job, created) so callers can report how many were
     actually new.
+
+    Either way the row's last_seen_at is stamped, which is how check_links
+    knows a posting is still being returned by its source. For an existing
+    row that is ALL a re-scrape changes, apart from two things:
+
+    - a row marked dead is revived (dead_at and dead_reason cleared): if a
+      scrape returns it again, the link check was wrong or the ad reopened;
+    - posted_at is filled in if the row doesn't have one yet.
+
+    Nothing else on an existing row is overwritten — status, generated
+    materials, contact fields and description are the user's/worker's data.
     """
     existing = session.exec(
         select(JobPost).where(JobPost.job_board_id == job.job_board_id)
     ).first()
     if existing:
+        existing.last_seen_at = utcnow()
+        if existing.dead_at is not None:
+            existing.dead_at = None
+            existing.dead_reason = None
+        if existing.posted_at is None and job.posted_at is not None:
+            existing.posted_at = job.posted_at
+        session.add(existing)
+        session.commit()
+        # commit() expires the row; reload it so the caller gets a usable
+        # object even after the session closes (same as the new-row path).
+        session.refresh(existing)
         return existing, False
 
+    if job.last_seen_at is None:
+        job.last_seen_at = utcnow()
     session.add(job)
     session.commit()
     session.refresh(job)
     return job, True
+
+
+# --- Dead-posting helpers ---------------------------------------------------
+#
+# Used by src/ingestion/check_links.py. The mark_* helpers issue bulk UPDATEs
+# and deliberately do NOT commit: the link checker commits in batches, so a
+# long run that is interrupted keeps what it has already recorded.
+
+# Ids per UPDATE statement. SQLite caps bound parameters per statement (999 on
+# older builds), so a long id list is split rather than sent as one IN (...).
+_ID_CHUNK_SIZE = 500
+
+
+def _update_jobs(
+    session: Session, job_ids: Sequence[int], values: dict, *extra_where
+) -> int:
+    """UPDATE jobpost SET <values> WHERE id IN (<job_ids>) [AND extra_where].
+
+    Chunked, no commit. Returns the number of rows the statements changed.
+    """
+    ids = list(job_ids)
+    changed = 0
+    for start in range(0, len(ids), _ID_CHUNK_SIZE):
+        chunk = ids[start : start + _ID_CHUNK_SIZE]
+        statement = (
+            update(JobPost)
+            .where(JobPost.id.in_(chunk), *extra_where)
+            .values(**values)
+        )
+        changed += session.exec(statement).rowcount
+    return changed
+
+
+def mark_seen(
+    session: Session, job_ids: Sequence[int], *, when: Optional[datetime] = None
+) -> int:
+    """Set last_seen_at on the given jobs. Does not commit; returns rows changed."""
+    if not job_ids:
+        return 0
+    return _update_jobs(session, job_ids, {"last_seen_at": when or utcnow()})
+
+
+def mark_checked(
+    session: Session, job_ids: Sequence[int], *, when: Optional[datetime] = None
+) -> int:
+    """Set last_checked_at on the given jobs. Does not commit; returns rows changed."""
+    if not job_ids:
+        return 0
+    return _update_jobs(session, job_ids, {"last_checked_at": when or utcnow()})
+
+
+def mark_dead(
+    session: Session,
+    job_ids: Sequence[int],
+    reason: str,
+    *,
+    when: Optional[datetime] = None,
+) -> int:
+    """Set dead_at and dead_reason on the given jobs that aren't dead already.
+
+    Rows with a dead_at are skipped, so the first death date and reason are
+    kept (and aren't counted in the return value). last_checked_at is left
+    alone — call mark_checked for that. Does not commit.
+    """
+    if not job_ids:
+        return 0
+    return _update_jobs(
+        session,
+        job_ids,
+        {"dead_at": when or utcnow(), "dead_reason": reason},
+        JobPost.dead_at.is_(None),
+    )
+
+
+class LinkCheckItem(NamedTuple):
+    """The minimal row check_links needs — no description/cover/email."""
+
+    id: int
+    title: str
+    company: str
+    url: str
+
+
+def _link_check_conditions(recheck_days: int, now: Optional[datetime]) -> list:
+    """WHERE clauses shared by link_check_queue and count_link_check_queue.
+
+    A posting is due for a link check when it isn't dead, has a URL, and has
+    been neither checked nor returned by a scrape within `recheck_days`. A
+    recent scrape sighting counts as proof of life, so those rows are skipped.
+    """
+    cutoff = (now or utcnow()) - timedelta(days=recheck_days)
+    return [
+        JobPost.dead_at.is_(None),
+        # NULL fails this comparison too, so a NULL url is excluded as well.
+        func.trim(JobPost.url) != "",
+        or_(JobPost.last_checked_at.is_(None), JobPost.last_checked_at < cutoff),
+        or_(JobPost.last_seen_at.is_(None), JobPost.last_seen_at < cutoff),
+    ]
+
+
+def link_check_queue(
+    session: Session,
+    *,
+    limit: Optional[int] = None,
+    recheck_days: int = 7,
+    now: Optional[datetime] = None,
+) -> List[LinkCheckItem]:
+    """Postings due for a link check, most overdue first.
+
+    Order: never-checked rows first, then oldest last_checked_at, ties by id.
+    `limit` is applied in SQL; None returns the whole queue. Only the four
+    LinkCheckItem columns are selected — the heavy text stays in the database.
+    """
+    statement = (
+        select(JobPost.id, JobPost.title, JobPost.company, JobPost.url)
+        .where(*_link_check_conditions(recheck_days, now))
+        .order_by(
+            # False (0) sorts before True (1): never-checked rows lead. Spelled
+            # out rather than relying on where a backend puts NULLs by default.
+            JobPost.last_checked_at.is_not(None),
+            JobPost.last_checked_at.asc(),
+            JobPost.id.asc(),
+        )
+    )
+    if limit is not None:
+        statement = statement.limit(limit)
+    return [
+        LinkCheckItem(id=row[0], title=row[1], company=row[2], url=row[3])
+        for row in session.exec(statement).all()
+    ]
+
+
+def count_link_check_queue(
+    session: Session, *, recheck_days: int = 7, now: Optional[datetime] = None
+) -> int:
+    """Size of the whole link-check queue (SQL COUNT), ignoring any limit."""
+    statement = (
+        select(func.count())
+        .select_from(JobPost)
+        .where(*_link_check_conditions(recheck_days, now))
+    )
+    return session.exec(statement).one()
 
 
 def pending_llm_jobs(session: Session, limit: int | None = None) -> List[JobPost]:

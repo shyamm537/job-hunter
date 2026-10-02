@@ -1,3 +1,4 @@
+from datetime import datetime
 from unittest.mock import patch
 
 from src.ingestion.lever import LeverScraper
@@ -9,6 +10,7 @@ FAKE_RESPONSE = [
         "hostedUrl": "https://jobs.lever.co/acme/1",
         "categories": {"location": "Remote", "team": "Data"},
         "descriptionPlain": "A great data analyst role.",
+        "createdAt": 1782011565000,  # ms since epoch = 2026-06-21T03:12:45Z
     },
     {
         "text": "Head Chef",
@@ -46,3 +48,11 @@ def test_lever_job_board_id_is_deterministic(mock_get):
     second = LeverScraper(company="acme").scrape()
     assert first[0].job_board_id == second[0].job_board_id
     assert first[0].job_board_id != first[1].job_board_id
+
+
+@patch("src.ingestion.lever.get_json", return_value=FAKE_RESPONSE)
+def test_lever_sets_posted_at_from_created_at(mock_get):
+    dated, undated = LeverScraper(company="acme").scrape()
+    assert dated.posted_at == datetime(2026, 6, 21, 3, 12, 45)  # naive UTC
+    assert dated.posted_at.tzinfo is None
+    assert undated.posted_at is None  # second posting has no createdAt

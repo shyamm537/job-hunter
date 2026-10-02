@@ -1,3 +1,4 @@
+from datetime import datetime
 from unittest.mock import patch
 
 from src.ingestion.ashby import AshbyScraper
@@ -12,6 +13,7 @@ FAKE_RESPONSE = {
             "isListed": True,
             "jobUrl": "https://jobs.ashbyhq.com/acme/1",
             "descriptionPlain": "Build pipelines.",
+            "publishedAt": "2026-06-21T03:12:45.393+00:00",
         },
         {
             "title": "Office Manager",
@@ -68,3 +70,13 @@ def test_ashby_job_board_id_deterministic(mock_get):
     b = AshbyScraper(org="acme").scrape()
     assert a[0].job_board_id == b[0].job_board_id
     assert a[0].job_board_id != a[1].job_board_id
+
+
+@patch("src.ingestion.ashby.get_json", return_value=FAKE_RESPONSE)
+def test_ashby_sets_posted_at_from_published_at(mock_get):
+    jobs = AshbyScraper(org="acme").scrape()
+    analytics = next(j for j in jobs if j.title == "Analytics Engineer")
+    office = next(j for j in jobs if j.title == "Office Manager")
+    assert analytics.posted_at == datetime(2026, 6, 21, 3, 12, 45, 393000)  # naive UTC
+    assert analytics.posted_at.tzinfo is None
+    assert office.posted_at is None  # no publishedAt on that posting
