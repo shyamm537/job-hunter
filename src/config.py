@@ -112,28 +112,6 @@ class AdzunaSource(BaseModel):
         self.country = (self.country or DEFAULT_ADZUNA_COUNTRY).strip().lower()
         return self
 
-
-
-class AdzunaSource(BaseModel):
-    """An Adzuna search, scoped to one country index (`au`, `in`, `gb`, ...).
-
-    Adzuna's API is per-country (the country is a path segment), so you list one
-    source per country you want, e.g. `adzuna au` and `adzuna in`. Titles come
-    from `filters`; the planner pairs each of `filters.locations` with the
-    matching country (so Adelaide is searched under `au`, Mumbai under `in`).
-    Credentials are NOT here — they're account-level, in the top-level `adzuna:`
-    block (app_id/app_key). See docs/scrapers.md.
-    """
-
-    type: Literal["adzuna"]
-    country: str = DEFAULT_ADZUNA_COUNTRY
-
-    @model_validator(mode="after")
-    def _normalise_country(self) -> "AdzunaSource":
-        self.country = (self.country or DEFAULT_ADZUNA_COUNTRY).strip().lower()
-        return self
-
-
 # Discriminated union: Pydantic picks the model by the `type` field.
 Source = Annotated[
     Union[SeekSource, GreenhouseSource, LeverSource, AshbySource, AdzunaSource],
@@ -328,11 +306,14 @@ def source_from_url(url: str, where: str = "url") -> Source:
         )
     token = segments[0]
 
-    if ats == "greenhouse":
-        return GreenhouseSource(type="greenhouse", board=token)
-    if ats == "lever":
-        return LeverSource(type="lever", company=token)
-    return AshbySource(type="ashby", org=token)
+    returnables = {
+        "greenhouse": GreenhouseSource(type="greenhouse", board=token),
+        "lever": LeverSource(type="lever", company=token),
+        "ashby": AshbySource(type="ashby", org=token),
+    }
+
+    return returnables[ats]
+
 
 
 def source_to_line(source: Source) -> str:

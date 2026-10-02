@@ -14,10 +14,10 @@ then pull from the backlog.
 
 ## Process
 
-- [~] **Stop committing straight to `main`.** Solo project, but branch-per-change
-  is still the right habit — cheap insurance against a bad commit landing on the
-  branch everything builds from. `git checkout -b <feature>` before the next
-  round, merge back once a chunk is done and tested.
+- [~] **Stop committing straight to `main`.** Branch-per-change is a cheap
+  insurance against a bad commit landing on the branch everything builds from. 
+  `git checkout -b <feature>` before the next round, merge back once a chunk 
+  is done and tested.
   - 2026-06-21: first feature branch `feat/ats-pipeline-expansion` created +
     pushed (the big batch: Ashby/Lever/Adzuna, discover, validate, contacts).
     The `checkout -b` crashed mid-write and truncated `.git/HEAD` + corrupted
@@ -28,9 +28,94 @@ then pull from the backlog.
 
 ## Up next (in priority order)
 
-1. [ ] **Removing Jobs**: Jobs may not remain listed on the websites forever. 
-    Another script needs to be included into the workflow that would check for 
-    jobs that no longer exist and depopulate the DB.
+1. [~] **Dead posting identification and handling** (was "Removing Jobs":
+   jobs don't stay listed forever, so find the ones that are gone and keep them
+   out of the way). Plan agreed 2026-10-02. Work the steps in order; 1, 2, 3
+   and 6 don't depend on the Adzuna calibration in step 4.
+
+   Where it stood on 2026-10-02: `src/ingestion/check_links.py` requests every
+   not-yet-dead row's URL and `--mark-dead` sets `dead_at`; `make scrape` chains
+   it but `run-pipeline.ps1` doesn't. `data/jobs.db` had 4,986 rows (4,757
+   Adzuna, 221 Greenhouse, 8 Lever) and none marked dead. Nothing except
+   `check_links.py` reads `dead_at`.
+
+   - [~] **Step 0 - green baseline.** Code done 2026-10-02, commit still to
+     do. 9 tests failed before any of this work; now 133 pass, 4 skipped.
+     - `"level"` typo for `"lever"` in `source_from_url()` (`src/config.py`)
+       fixed (4 tests).
+     - `src/ingestion/factory.py` is now the re-export shim its docstring
+       describes; the old `build_scraper()` was unused and broken (1 test).
+     - The 4 `tests/test_db_migration.py` tests call
+       `_migrate_adzuna_dedup_keys`, which isn't in `src/storage/database.py`
+       on any branch. Skipped with a reason, not fixed - see "Adzuna re-key
+       migration never landed" in the backlog.
+     - Open: commit this together with the pending planner/config edits, from
+       Windows git (from a Linux shell 57 files differ by line endings only).
+   - [ ] **Step 1 - schema.** Add nullable `last_seen_at`, `last_checked_at`,
+     `dead_reason` to `JobPost`. Register them and `dead_at` in
+     `_ADDED_COLUMNS` (an older DB currently fails with "no such column:
+     dead_at"). Test that an old DB gains the columns.
+   - [ ] **Step 2 - storage helpers** in `src/storage/database.py`:
+     `mark_seen`, `mark_dead(ids, reason)`, a link-check queue
+     (`limit`, `recheck_days`). `upsert_job` on an existing row sets
+     `last_seen_at` and clears `dead_at`, so a wrongly-closed job comes back
+     when the scraper sees it again.
+   - [ ] **Step 3 - board reconciliation in the scrape step**
+     (`src/ingestion/cli.py`). `PlannedScrape` carries `(source, company)` for
+     whole-board scrapes. After a successful scrape, compare against the
+     UNFILTERED list: DB rows for that board that are missing are marked dead
+     ("gone from board"), the rest marked seen. Skip when the scrape raised or
+     returned zero jobs. Why: 113 of 221 Greenhouse rows link to company career
+     sites (e.g. `stripe.com/jobs/search?gh_jid=...`) that probably return 200
+     whether or not the job exists, so a URL check is the wrong signal there.
+   - [ ] **Step 4 - calibrate Adzuna** (run on a real machine; Adzuna 403s
+     automated fetches from the build sandbox). Add a report-only mode to
+     `check_links.py` (`--report file.tsv`: status, final URL, body snippet, no
+     marking). Run on ~150 June rows and ~50 August rows, then write per-host
+     rules from what comes back. The current 404 "apply for this job" rescue
+     and `CLOSED_PHRASES` are unverified guesses. Fallback if Adzuna gives no
+     clean signal: mark dead when not re-seen in search for N days.
+   - [ ] **Step 5 - rework `check_links.py`.** Only rows step 3 doesn't cover;
+     oldest-checked first; skip rows seen or checked in the last N days;
+     `--limit` applied in SQL with a default cap; GET only (drop the HEAD);
+     record `last_checked_at`; commit in batches so Ctrl-C keeps progress;
+     exit 0 on an empty queue (exit 1 currently fails `make scrape`); 404/410
+     = dead, per-host soft rules, anything else = unknown. Tests with a fake
+     HTTP session (`tests/test_check_links.py` doesn't exist yet).
+   - [ ] **Step 6 - handling.** Exclude dead rows from `pending_llm_jobs`,
+     `count_pending_llm_jobs`, `pending_contact_jobs` (4,502 rows were pending
+     generation, dead ones included). Dashboard: hide dead "To Apply" rows
+     behind a "Show closed postings" toggle; keep Applied/Interviewing rows
+     visible with a closed marker; show date + reason on the detail page.
+   - [ ] **Step 7 - wiring and docs.** Separate `make check-links` target (stop
+     chaining the full check onto `make scrape`); add it as an `-Optional` step
+     in `run-pipeline.ps1`; remove the duplicated `validate` / `discover` /
+     `contacts` targets in the Makefile; update `docs/data-model.md`, README;
+     delete `src/insert_test_row.py` once tests replace it.
+   - [ ] **Step 8 - parallel harness (late-stage).** One shared runner for the
+     board checks (`validate.py`, and the board scrapes in `make scrape`) and
+     the job checks (`check_links.py`). Thread pool with `--workers N`;
+     concurrency ACROSS hosts plus a per-host cap and per-host delay, so no
+     single site is hammered. Network calls in workers, all DB writes on the
+     main thread (SQLite has one writer). Note the ceiling: ~95% of rows sit
+     on two Adzuna hosts, so the per-host cap, not the worker count, bounds
+     the speed-up there; boards and career sites parallelise well. Tests with
+     a fake fetcher: every item returns a result, the per-host cap is never
+     exceeded, one failing item doesn't sink the batch.
+   - [ ] **Step 9 - scheduled checks (late-stage).** Daily: all boards
+     (`validate` + the step 3 reconciliation). Weekly: every job, spread over
+     the week - assign each board/company a stable day-of-week bucket (hash of
+     the name mod 7; Adzuna rows by `id` mod 7) and check only today's bucket
+     (`check_links --bucket today`), with `last_checked_at` as the safety net
+     for missed days. Trigger with Windows Task Scheduler running
+     `run-pipeline.ps1 -SkipApp`; the machine has to be on.
+
+   Open decisions:
+   - Hide dead rows (recommended: deleting loses any generated cover letter,
+     and a deleted row is re-inserted as new if a scraper sees it again) or
+     actually delete them ("depopulate the DB").
+   - Keep `validate.py` (boards) and `check_links.py` (postings) separate
+     (recommended) or merge them, per the note at the bottom of this file.
 
 1. [ ] **Adding jobs.**: Streamlit UI should allow adding jobs to `jobs.db`
    in order to facilitate cover letter and cold email generation. Most of 
@@ -118,6 +203,17 @@ then pull from the backlog.
 
 ### Scrapers / sources
 
+- [ ] **Adzuna re-key migration never landed.** Item 4 in "Up next" says
+  `_migrate_adzuna_dedup_keys()` is in `src/storage/database.py`; it is not, on
+  any branch, so legacy rows were re-inserted under the new key: 782 ads are
+  stored twice (996 extra rows) as of 2026-10-02. Its 4 tests in
+  `tests/test_db_migration.py` are skipped until this is decided. Before
+  building it: (a) `adzuna_id_from_url()` expects `/land/ad/<id>`, but 3,576 of
+  4,757 stored URLs are `/details/<id>`; (b) the tested behaviour keeps the
+  id-keyed row and drops the legacy one, yet for 52 duplicated ads only the
+  OLDER row has a cover letter - merge the materials rather than drop them;
+  (c) it would run automatically from `init_db()` and delete rows, so back up
+  `data/jobs.db` first.
 - [~] **Ashby scraper.** Code done — `src/ingestion/ashby.py` (3rd ATS). Public
   board API (`api.ashbyhq.com/posting-api/job-board/<org>`); skips unlisted
   postings and folds the `isRemote` flag into the location so the remote-passes
@@ -282,3 +378,19 @@ then pull from the backlog.
 ## Done recently (context, prune when stale)
 
 - [x] **config.yaml migrated to the `filters` + `sources` schema** and ver
+
+
+
+
+
+
+- validate and check_links should be one file
+- check_links populates the dead_at column if it isn't already. dead_at records timestamp for when it was found to be dead. 
+- ollama fine tuning
+
+
+
+----
+# Project 2
+
+housing prices and
