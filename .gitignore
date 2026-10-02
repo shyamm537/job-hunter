@@ -14,3 +14,6 @@ config.yaml
 
 sources.txt
 .Rhistory
+
+# Local working notes; tasks are tracked in Jira (project KAN).
+TODO.md
