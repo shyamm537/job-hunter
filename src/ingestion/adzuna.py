@@ -23,6 +23,7 @@ from typing import List, Optional
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from src.ingestion.base_scraper import BaseScraper
+from src.ingestion.dates import parse_posted_at
 from src.ingestion.http_util import get_json
 from src.storage.models import JobPost
 
@@ -168,6 +169,11 @@ class AdzunaScraper(BaseScraper):
                         # Adzuna returns only a snippet here (documented limit).
                         description=entry.get("description", ""),
                         url=url,
+                        # `created`: ISO 8601, e.g. "2026-06-21T03:12:45Z".
+                        # Field name from Adzuna's public API docs; not checked
+                        # against the live API from this environment. None if
+                        # absent/unparseable.
+                        posted_at=parse_posted_at(entry.get("created")),
                     )
                 )
             # Last page reached when the API returns a short page.

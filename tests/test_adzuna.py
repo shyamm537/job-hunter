@@ -1,3 +1,4 @@
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
@@ -14,7 +15,8 @@ from src.ingestion.adzuna import (
 from src.ingestion.planner import plan_scrapes
 
 
-def _result(title="Data Analyst", company="Acme", loc="Adelaide", url="u1", id=None):
+def _result(title="Data Analyst", company="Acme", loc="Adelaide", url="u1", id=None,
+            created=None):
     entry = {
         "title": title,
         "company": {"display_name": company},
@@ -24,6 +26,8 @@ def _result(title="Data Analyst", company="Acme", loc="Adelaide", url="u1", id=N
     }
     if id is not None:
         entry["id"] = id
+    if created is not None:
+        entry["created"] = created
     return entry
 
 
@@ -164,3 +168,22 @@ def test_adzuna_id_from_url_extracts_path_id():
     # No land/ad segment -> None (caller leaves such a row untouched).
     assert adzuna_id_from_url("https://example.com/jobs/789") is None
     assert adzuna_id_from_url("") is None
+
+
+# --- posted_at -------------------------------------------------------------
+
+
+def test_scrape_sets_posted_at_from_created():
+    payload = {
+        "results": [
+            _result(url="a", id="1", created="2026-06-21T03:12:45Z"),
+            _result(url="b", id="2"),  # no `created` field
+            _result(url="c", id="3", created="not a date"),
+        ]
+    }
+    with patch("src.ingestion.adzuna.get_json", return_value=payload):
+        jobs = AdzunaScraper("data", "Adelaide", "au", "id", "key").scrape()
+    assert jobs[0].posted_at == datetime(2026, 6, 21, 3, 12, 45)  # naive UTC
+    assert jobs[0].posted_at.tzinfo is None
+    assert jobs[1].posted_at is None
+    assert jobs[2].posted_at is None  # unparseable -> None, scrape still succeeds

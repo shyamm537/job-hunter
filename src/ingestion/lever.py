@@ -16,6 +16,7 @@ import hashlib
 from typing import List, Optional
 
 from src.ingestion.base_scraper import BaseScraper
+from src.ingestion.dates import parse_posted_at
 from src.ingestion.http_util import get_json
 from src.storage.models import JobPost
 
@@ -63,6 +64,11 @@ class LeverScraper(BaseScraper):
                     location=location,
                     description=description,
                     url=url,
+                    # `createdAt`: integer milliseconds since the Unix epoch.
+                    # Field name from Lever's public postings API docs; not
+                    # checked against the live API from this environment.
+                    # None if absent/unparseable.
+                    posted_at=parse_posted_at(entry.get("createdAt")),
                 )
             )
 

@@ -19,6 +19,7 @@ import hashlib
 from typing import List
 
 from src.ingestion.base_scraper import BaseScraper
+from src.ingestion.dates import parse_posted_at
 from src.ingestion.http_util import get_json
 from src.storage.models import JobPost
 
@@ -68,6 +69,10 @@ class AshbyScraper(BaseScraper):
                     location=location,
                     description=description,
                     url=url,
+                    # `publishedAt`: ISO 8601 string. Field name from Ashby's
+                    # public job-board API docs; not checked against the live
+                    # API from this environment. None if absent/unparseable.
+                    posted_at=parse_posted_at(entry.get("publishedAt")),
                 )
             )
 

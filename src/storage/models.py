@@ -31,3 +31,15 @@ class JobPost(SQLModel, table=True):
     # leaves the queue). Free-text for now, like `status` — see docs/data-model.md.
     contact_confidence: Optional[str] = None
     dead_at: Optional[datetime] = None #When the job listing was found to be dead
+    # Dead-posting bookkeeping (see TODO.md "dead posting handling"). All
+    # nullable, all naive UTC like date_scraped. Registered in _ADDED_COLUMNS
+    # in database.py so an older database gains them on init_db().
+    # Short reason set together with dead_at, e.g. "http 404". Cleared with
+    # dead_at when a later scrape sees the posting again.
+    dead_reason: Optional[str] = None
+    # When the source says the ad was published (None if it doesn't say).
+    posted_at: Optional[datetime] = None
+    # Last time a scrape returned this posting (set by upsert_job).
+    last_seen_at: Optional[datetime] = None
+    # Last time check_links requested this posting's URL.
+    last_checked_at: Optional[datetime] = None
