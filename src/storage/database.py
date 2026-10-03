@@ -9,7 +9,7 @@ The database URL is resolved lazily, in priority order:
 4. A local SQLite default (`sqlite:///data/jobs.db`).
 
 Because steps 2-4 are automatic, code paths that don't set the URL
-explicitly (the Streamlit app, the LLM worker) still pick up a non-default
+explicitly (e.g. the LLM worker) still pick up a non-default
 URL from config or the environment without any changes of their own.
 
 A note on what's actually supported: SQLite is the product. Postgres (or
@@ -512,11 +512,11 @@ def pending_contact_jobs(session: Session) -> List[JobPost]:
 
 # --- Dashboard read helpers -------------------------------------------------
 #
-# The Streamlit list view must NOT hydrate full JobPost rows: description and
+# The dashboard's list view must NOT hydrate full JobPost rows: description and
 # the two generated blobs (cover letter, cold email) are large and the list
 # never shows them. These helpers select only the columns the list renders, so
 # the heavy text stays in the database until a single job's detail page asks
-# for it. See docs/data-model.md and src/app/main.py.
+# for it. See docs/data-model.md and src/app/web.py.
 
 # Every job_board_id is "<source>-<hash>" (see src/ingestion/*). The source is
 # the prefix before the first dash; no source name contains a dash, so a

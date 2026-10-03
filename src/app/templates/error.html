@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}{{ error.code }}{% endblock %}
+{% block content %}
+<article class="narrow">
+  <h1>{{ error.code }} &middot; {{ error.name }}</h1>
+  <p>{% if error.code == 404 %}That job doesn't exist (it may have been archived).{% else %}{{ error.description }}{% endif %}</p>
+  <p><a href="{{ url_for('web.jobs') }}">&larr; All jobs</a></p>
+</article>
+{% endblock %}

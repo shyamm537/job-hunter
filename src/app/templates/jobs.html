@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="layout">
+  <form class="filters" method="get" action="{{ url_for('web.jobs') }}">
+    <h2>Filters</h2>
+
+    <label for="q">Title contains</label>
+    <input id="q" name="q" type="search" value="{{ selected.q }}">
+
+    {% if options.sources %}
+    <fieldset>
+      <legend>Source</legend>
+      {% for source in options.sources %}
+        <label class="check"><input type="checkbox" name="source" value="{{ source }}"
+          {% if source in selected.sources %}checked{% endif %}> {{ source }}</label>
+      {% endfor %}
+    </fieldset>
+    {% endif %}
+
+    <fieldset>
+      <legend>Status</legend>
+      {% for status in statuses %}
+        <label class="check"><input type="checkbox" name="status" value="{{ status }}"
+          {% if status in selected.statuses %}checked{% endif %}> {{ status }}</label>
+      {% endfor %}
+    </fieldset>
+
+    <label for="company">Company</label>
+    <select id="company" name="company">
+      <option value="">Any</option>
+      {% for company in options.companies %}
+        <option{% if company == selected.company %} selected{% endif %}>{{ company }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="location">Location</label>
+    <select id="location" name="location">
+      <option value="">Any</option>
+      {% for location in options.locations %}
+        <option{% if location == selected.location %} selected{% endif %}>{{ location }}</option>
+      {% endfor %}
+    </select>
+
+    <div class="actions">
+      <button type="submit">Apply</button>
+      {% if any_filter %}<a href="{{ url_for('web.jobs') }}">Clear</a>{% endif %}
+    </div>
+  </form>
+
+  <section>
+    <h1>Jobs</h1>
+    {% if jobs %}
+      <p class="muted">{{ jobs|length }} job(s){% if any_filter %} matching filters{% endif %}.</p>
+      <table class="jobs">
+        <thead><tr><th>Title</th><th>Company</th><th>Status</th><th>Location</th></tr></thead>
+        <tbody>
+        {% for job in jobs %}
+          <tr>
+            <td><a href="{{ url_for('web.job', job_id=job.id) }}">{{ job.title }}</a></td>
+            <td>{{ job.company }}</td>
+            <td>
+              <form method="post" action="{{ url_for('web.update_status', job_id=job.id) }}">
+                <input type="hidden" name="next" value="{{ here }}">
+                <select name="status" aria-label="Status of {{ job.title }}" onchange="this.form.submit()">
+                  {% for status in statuses %}
+                    <option{% if status == job.status %} selected{% endif %}>{{ status }}</option>
+                  {% endfor %}
+                </select>
+                <noscript><button type="submit">Save</button></noscript>
+              </form>
+            </td>
+            <td>{{ job.location }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% elif any_filter %}
+      <p class="muted">No jobs match the current filters.</p>
+    {% else %}
+      <p class="muted">No jobs yet. Run <code>make scrape</code>, or <a href="{{ url_for('web.add_job') }}">add one</a>.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

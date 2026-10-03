@@ -6,10 +6,10 @@
 
 ```
 ingestion  →  storage  →  llm  →  app
-(scrapers)    (SQLite)    (Ollama)  (Streamlit)
+(scrapers)    (SQLite)    (Ollama)  (Flask)
 ```
 
-Each layer only talks to the one next to it. `app/main.py` never imports a scraper; `ingestion/` never imports Streamlit. The database is the seam between all of them — every layer reads/writes `JobPost` rows and nothing else.
+Each layer only talks to the one next to it. `src/app/` never imports a scraper; `ingestion/` never imports the web app. The database is the seam between all of them — every layer reads/writes `JobPost` rows and nothing else.
 
 ## The three design decisions
 
@@ -25,14 +25,14 @@ Why this matters in practice: if Adzuna changes its API, only `adzuna.py` change
 
 ### 2. Database-backed queue instead of asyncio
 
-The original plan considered an asyncio worker so the LLM wouldn't block Streamlit's UI thread. That was dropped: Streamlit's threading model fights background workers that try to push updates into the UI, and the added complexity (race conditions, shared state) wasn't worth it for what this pipeline needs.
+The original plan considered an asyncio worker so the LLM wouldn't block the dashboard (then Streamlit). That was dropped: background workers pushing updates into a UI mean race conditions and shared state, and the complexity wasn't worth it for what this pipeline needs.
 
 Instead:
 
 - `make scrape` (`src/ingestion/cli.py`) writes `JobPost` rows. New rows have `generated_cover_letter = None` by construction.
 - `make check-links` (`src/ingestion/check_links.py`) picks rows no scrape has seen lately and marks the ones whose link returns 404/410 dead.
 - `make process` (`src/llm/cli.py`) calls `pending_llm_jobs()` (`src/storage/database.py`) to find rows where `generated_cover_letter IS NULL`, generates materials, writes them back.
-- `make app` (`src/app/main.py`) only ever reads, plus writes simple status-field updates (`To Apply` → `Applied` → ...).
+- `make app` (`src/app/`) only ever reads, plus writes status updates (`To Apply` → `Applied` → ...) and jobs you add by hand.
 
 No process talks to another process directly. The database is the queue. This is slower than an in-memory queue but there is no in-flight state to lose, and any step can be re-run safely.
 
@@ -49,7 +49,7 @@ Today `backend: ollama` is the only valid value — anything else raises `ValueE
 1. `make scrape` → `plan_scrapes(sources, filters)` expands Adzuna sources into one search per `(title, location)` and marks ATS boards for post-filtering → each planned scrape runs, ATS results are filtered by `job_matches()` → `upsert_job()` dedupes against `job_board_id` and inserts new rows. One planned scrape failing is logged and skipped, not fatal. After each successful board scrape, `reconcile_board()` marks the board's stored rows that it no longer lists as dead (`"gone from board"`) and the rest as seen. At the end, `archive_dead_jobs()` (`src/storage/archive.py`) moves dead `To Apply`/`Rejected` rows to `data/dead_jobs.db`.
 2. `make check-links` (optional) → `link_check_queue()` picks live rows not checked or seen within `--recheck-days` → one GET each → 404/410 marks the row dead → dead rows are archived the same way.
 3. `make process` → `pending_llm_jobs()` finds rows with no cover letter → `OllamaClient.generate()` is called twice per job (cover letter, cold email) using templates from `src/llm/prompts.py` → results written back to the same row.
-4. `make app` → Streamlit reads all rows, renders one expander per job, lets you change `status` inline.
+4. `make app` → a small Flask app on `127.0.0.1:8000` (`src/app/`): the jobs list (`list_job_summaries()`, filters in the URL) with an inline status dropdown, a page per job (`get_job()`), and "Add a job" (`add_manual_job()`).
 
 ## What's deliberately not built yet
 

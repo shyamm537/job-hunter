@@ -1,5 +1,5 @@
 sqlmodel==0.0.38
-streamlit>=1.38
+flask>=3.0
 requests>=2.32
 pydantic>=2.8
 pyyaml>=6.0
