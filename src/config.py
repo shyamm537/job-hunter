@@ -3,11 +3,11 @@
 The config separates *what* you're looking for from *where* you look:
 
 - `filters`: the titles and locations you want (shared across all sources).
-- `sources`: where to look — an Adzuna search, or a Greenhouse/Lever/Ashby/Workable board.
+- `sources`: where to look — an Adzuna search, or a Greenhouse/Lever/Ashby/Workable/Workday board.
 
 This split exists because the source types use that intent differently. Adzuna
 is a search engine, so each (title, location) becomes a query. An ATS board
-(Greenhouse, Lever, Ashby, Workable) returns a company's whole list, so the filters are
+(Greenhouse, Lever, Ashby, Workable, Workday) returns a company's whole list, so the filters are
 applied to the results afterwards. Keeping titles/locations out of the
 per-source lines is what makes the source file clean and the model easy to
 reason about.
@@ -18,6 +18,7 @@ reason about.
 
 from __future__ import annotations
 
+import re
 import shlex
 from pathlib import Path
 from typing import Annotated, List, Literal, Optional, Tuple, Union
@@ -94,6 +95,20 @@ class WorkableSource(BaseModel):
     account: str
 
 
+class WorkdaySource(BaseModel):
+    """A Workday careers site. Three values, all read off its careers URL
+    (`https://<tenant>.<datacenter>.myworkdayjobs.com/<site>`), none guessable
+    from a company name: the `tenant` (`cba`), the data centre (`wd3`) and the
+    `site` (`CommBank_Careers`, case as it appears). One site per tenant: the
+    tenant is the board token, so two sites on one tenant would be reconciled
+    as one board (see plan_scrapes)."""
+
+    type: Literal["workday"]
+    tenant: str
+    datacenter: str
+    site: str
+
+
 class AdzunaSource(BaseModel):
     """An Adzuna search, scoped to one country index (`au`, `in`, `gb`, ...).
 
@@ -116,7 +131,10 @@ class AdzunaSource(BaseModel):
 
 # Discriminated union: Pydantic picks the model by the `type` field.
 Source = Annotated[
-    Union[GreenhouseSource, LeverSource, AshbySource, WorkableSource, AdzunaSource],
+    Union[
+        GreenhouseSource, LeverSource, AshbySource, WorkableSource, WorkdaySource,
+        AdzunaSource,
+    ],
     Field(discriminator="type"),
 ]
 
@@ -254,6 +272,33 @@ _ATS_HOSTS = {
 }
 
 
+# Workday careers hosts are <tenant>.<datacenter>.myworkdayjobs.com, so they
+# can't go in the exact-host lookup above: the tenant is part of the host.
+_WORKDAY_HOST = re.compile(r"^(?P<tenant>[a-z0-9][a-z0-9-]*)\.(?P<dc>wd\d+)\.myworkdayjobs\.com$")
+# An optional locale segment (en-US, fr-CA) comes before the site name.
+_LOCALE_SEGMENT = re.compile(r"^[A-Za-z]{2}-[A-Za-z]{2}$")
+_WORKDAY_FORM = "https://<tenant>.<datacenter>.myworkdayjobs.com/<site>"
+
+
+def _workday_from_url(match: "re.Match[str]", path: str, url: str, where: str) -> "WorkdaySource":
+    """Tenant and data centre come from the host; the site is the first path
+    segment after an optional locale, with its case kept as given."""
+    segments = [s for s in path.split("/") if s]
+    if segments and _LOCALE_SEGMENT.match(segments[0]):
+        segments = segments[1:]
+    if not segments:
+        raise ConfigError(
+            f"{where}: could not find the site name in Workday URL {url!r} "
+            f"(expected {_WORKDAY_FORM}, e.g. https://cba.wd3.myworkdayjobs.com/CommBank_Careers)"
+        )
+    return WorkdaySource(
+        type="workday",
+        tenant=match.group("tenant"),
+        datacenter=match.group("dc"),
+        site=segments[0],
+    )
+
+
 def _looks_like_url(token: str) -> bool:
     """Heuristic: does this single token look like a careers URL rather than a
     bare source word like `adzuna` or `greenhouse`?
@@ -273,6 +318,8 @@ def source_from_url(url: str, where: str = "url") -> Source:
         https://jobs.lever.co/metabase           → lever metabase
         https://jobs.ashbyhq.com/ashby           → ashby ashby
         https://apply.workable.com/squiz         → workable squiz
+        https://cba.wd3.myworkdayjobs.com/en-US/CommBank_Careers
+                                                 → workday cba wd3 CommBank_Careers
 
     The scheme is optional (`boards.greenhouse.io/stripe` works), trailing
     paths/slashes are ignored (a deep posting link still yields the org token),
@@ -287,9 +334,13 @@ def source_from_url(url: str, where: str = "url") -> Source:
     if host.startswith("www."):
         host = host[4:]
 
+    workday = _WORKDAY_HOST.match(host)
+    if workday:
+        return _workday_from_url(workday, parsed.path, url, where)
+
     ats = _ATS_HOSTS.get(host)
     if ats is None:
-        supported = ", ".join(sorted(_ATS_HOSTS))
+        supported = ", ".join(sorted(_ATS_HOSTS) + ["<tenant>.<wdN>.myworkdayjobs.com"])
         raise ConfigError(
             f"{where}: unrecognised careers URL host {host or url!r} "
             f"(supported: {supported})"
@@ -334,6 +385,8 @@ def source_to_line(source: Source) -> str:
         return f"ashby {source.org}"
     if source.type == "workable":
         return f"workable {source.account}"
+    if source.type == "workday":
+        return f"workday {source.tenant} {source.datacenter} {source.site}"
     if source.type == "adzuna":
         return f"adzuna {source.country}"
     raise ValueError(f"Unknown source type: {source.type!r}")
@@ -371,6 +424,16 @@ def _source_from_line(path: str, lineno: int, parts: List[str]) -> Source:
                 f"{path} line {lineno}: 'workable' needs exactly one account token"
             )
         return WorkableSource(type="workable", account=args[0])
+    if kind == "workday":
+        if len(args) != 3:
+            raise ConfigError(
+                f"{path} line {lineno}: 'workday' needs exactly three tokens: "
+                "<tenant> <datacenter> <site> (e.g. 'workday cba wd3 CommBank_Careers'), "
+                "or paste the careers URL"
+            )
+        return WorkdaySource(
+            type="workday", tenant=args[0], datacenter=args[1], site=args[2]
+        )
     if kind == "adzuna":
         if len(args) > 1:
             raise ConfigError(
@@ -381,7 +444,7 @@ def _source_from_line(path: str, lineno: int, parts: List[str]) -> Source:
         return AdzunaSource(type="adzuna", country=country)
     raise ConfigError(
         f"{path} line {lineno}: unknown source type {parts[0]!r} "
-        "(expected greenhouse, lever, ashby, workable, or adzuna)"
+        "(expected greenhouse, lever, ashby, workable, workday, or adzuna)"
     )
 
 
@@ -396,6 +459,7 @@ def load_sources_file(path: str) -> List[Source]:
         lever figma
         ashby ashby
         workable squiz
+        workday cba wd3 CommBank_Careers
         https://jobs.lever.co/metabase   # a pasted careers URL also works
 
     Titles and locations are NOT in this file — they live in `filters`.

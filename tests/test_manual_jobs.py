@@ -91,15 +91,16 @@ def test_manual_shows_up_as_a_source(db):
         assert present_sources(session) == [MANUAL_SOURCE]
 
 
-def test_workable_rows_show_up_as_a_source(db):
+@pytest.mark.parametrize("source", ["workable", "workday"])
+def test_board_rows_show_up_as_a_source(db, source):
     # KNOWN_SOURCES drives the dashboard's Source filter; a source missing from
     # it would never appear there.
     with get_session() as session:
-        session.add(JobPost(job_board_id="workable-abc1234567", title="Analyst",
-                            company="squiz", location="Sydney", description="d",
-                            url="https://apply.workable.com/j/AAAA111111"))
+        session.add(JobPost(job_board_id=f"{source}-abc1234567", title="Analyst",
+                            company="acme", location="Sydney", description="d",
+                            url="https://example.test/job"))
         session.commit()
-        assert present_sources(session) == ["workable"]
+        assert present_sources(session) == [source]
 
 
 # --- queues --------------------------------------------------------------------

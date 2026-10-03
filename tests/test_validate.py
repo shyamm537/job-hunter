@@ -6,6 +6,7 @@ from src.config import (
     GreenhouseSource,
     LeverSource,
     WorkableSource,
+    WorkdaySource,
     source_to_line,
 )
 from src.ingestion import validate as V
@@ -70,6 +71,22 @@ def test_workable_board_validates_and_a_dead_account_is_reported_dead():
     assert r.live is False and r.status == "dead" and "404" in r.error
 
 
+def test_workday_board_validates_and_a_dead_tenant_is_reported_dead():
+    source = WorkdaySource(type="workday", tenant="acme", datacenter="wd3", site="Careers")
+    jobs = _jobs(("Senior Data Analyst", "Remote"), ("Chef", "Paris"))
+    with patch("src.ingestion.workday.WorkdayScraper.scrape", return_value=jobs):
+        r = V.validate_source(source, F)
+    assert r.label == "workday[acme/Careers]" and r.status == "match" and r.matched == 1
+
+    # An unknown tenant is a 422 and a wrong site a 404; both raise.
+    with patch(
+        "src.ingestion.workday.WorkdayScraper.scrape",
+        side_effect=RuntimeError("422 Client Error"),
+    ):
+        r = V.validate_source(source, F)
+    assert r.live is False and r.status == "dead" and "422" in r.error
+
+
 def test_kept_filters_to_live_then_to_matching():
     live_match = V.ValidationResult(
         GreenhouseSource(type="greenhouse", board="a"), "a", True, 5, 2, None)
@@ -95,3 +112,14 @@ def test_source_to_line_roundtrips():
     assert source_to_line(GreenhouseSource(type="greenhouse", board="stripe")) == "greenhouse stripe"
     assert source_to_line(LeverSource(type="lever", company="metabase")) == "lever metabase"
     assert source_to_line(WorkableSource(type="workable", account="Squiz")) == "workable Squiz"
+    workday = WorkdaySource(type="workday", tenant="cba", datacenter="wd3", site="CommBank_Careers")
+    assert source_to_line(workday) == "workday cba wd3 CommBank_Careers"
+
+
+def test_workday_source_to_line_parses_back_to_the_same_source(tmp_path):
+    from src.config import load_sources_file
+
+    source = WorkdaySource(type="workday", tenant="flinders", datacenter="wd3", site="flinders_employment")
+    path = tmp_path / "sources.txt"
+    path.write_text(source_to_line(source) + "\n", encoding="utf-8")
+    assert load_sources_file(str(path)) == [source]
