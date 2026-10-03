@@ -11,7 +11,7 @@ from typing import Any
 
 import requests
 
-USER_AGENT = "job-hunter-ai/0.1 (+https://github.com/your/repo)"
+USER_AGENT = "job-hunter-ai/0.1 (+https://github.com/shyamm537/job-hunter)"
 
 
 def get_json(
