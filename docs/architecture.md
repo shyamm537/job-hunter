@@ -15,7 +15,7 @@ Each layer only talks to the one next to it. `src/app/` never imports a scraper;
 
 ### 1. Strategy Pattern for scrapers
 
-`src/ingestion/base_scraper.py` defines `BaseScraper`, an `abc.ABC` with one abstract method: `scrape() -> List[JobPost]`. There are four concrete implementations: `src/ingestion/adzuna.py` (Adzuna search API — the search source) and three ATS board readers, `greenhouse.py`, `lever.py`, and `ashby.py` (public board JSON APIs).
+`src/ingestion/base_scraper.py` defines `BaseScraper`, an `abc.ABC` with one abstract method: `scrape() -> List[JobPost]`. There are five concrete implementations: `src/ingestion/adzuna.py` (Adzuna search API — the search source) and four ATS board readers, `greenhouse.py`, `lever.py`, `ashby.py` and `workable.py` (public board JSON APIs).
 
 The contract is deliberately thin — a scraper takes whatever constructor args it needs and returns a list of `JobPost` objects. It's a pure fetcher: it doesn't talk to the database, and it doesn't know about filters. `src/ingestion/planner.py` (`plan_scrapes`) is the one place that turns validated `sources` + `filters` into concrete scrapers, so the CLI loops over `PlannedScrape` items without knowing their concrete types. (`src/ingestion/factory.py` is now a thin deprecation shim re-exporting the planner.)
 
