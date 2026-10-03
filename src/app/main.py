@@ -2,7 +2,9 @@
 
 This deliberately does no scraping and no LLM calls. Those run as separate
 CLI steps (`make scrape`, `make process`) so the UI thread never blocks on
-either. The app only reads from, and writes status updates to, the DB.
+either. The app reads from the DB and writes only status updates and jobs you
+add by hand ("Add a job" on the list page); `make process` writes the cover
+letter for an added job on its next run, before the scraped backlog.
 
 Why two pages (see docs/data-model.md):
 
@@ -37,6 +39,7 @@ import streamlit as st  # noqa: E402
 from src.config import ConfigError, load_config  # noqa: E402
 from src.logging_config import setup_logging  # noqa: E402
 from src.storage.database import (  # noqa: E402
+    add_manual_job,
     distinct_companies,
     distinct_locations,
     get_job,
@@ -73,9 +76,47 @@ def _status_index(status: str) -> int:
     return STATUSES.index(status) if status in STATUSES else 0
 
 
+def _add_job_form() -> None:
+    """"Add a job" form: a job you found yourself (LinkedIn, SEEK, Naukri...).
+
+    Stored with the `manual` source. `make process` generates its cover letter
+    first on its next run; it is never link-checked.
+    """
+    with st.expander("Add a job", expanded=False):
+        with st.form("add_job", clear_on_submit=True):
+            title = st.text_input("Title *")
+            company = st.text_input("Company *")
+            location = st.text_input("Location")
+            url = st.text_input("Job URL", placeholder="https://...")
+            description = st.text_area(
+                "Job description *", height=200,
+                help="Paste the full description: the cover letter is written from it.",
+            )
+            submitted = st.form_submit_button("Add job")
+        if not submitted:
+            return
+        try:
+            with get_session() as session:
+                job, created = add_manual_job(
+                    session, title=title, company=company, location=location,
+                    url=url, description=description,
+                )
+        except ValueError as exc:
+            st.error(f"Couldn't add the job: {exc}.")
+            return
+        if created:
+            st.success(
+                f"Added **{job.title}** at {job.company}. The next `make process` "
+                "run writes its cover letter first."
+            )
+        else:
+            st.info(f"**{job.title}** at {job.company} is already in your list.")
+
+
 def render_home() -> None:
     """List page: filterable, lightweight table. No heavy columns loaded."""
     st.title("Job Hunter AI")
+    _add_job_form()
 
     # Filter option values are themselves cheap single-column reads.
     with get_session() as session:
@@ -112,7 +153,10 @@ def render_home() -> None:
         if any_filter:
             st.info("No jobs match the current filters.")
         else:
-            st.info("No jobs yet. Run `make scrape` to populate the database.")
+            st.info(
+                "No jobs yet. Run `make scrape` to populate the database, or "
+                "add one above."
+            )
         return
 
     st.caption(f"{len(summaries)} job(s){' matching filters' if any_filter else ''}.")

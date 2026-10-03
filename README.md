@@ -155,6 +155,8 @@ make process   # generate cover letters / cold emails for pending rows
 make app       # launch the Streamlit dashboard (bound to localhost)
 ```
 
+**Adding a job by hand.** Found a role on LinkedIn, SEEK or Naukri? Open **Add a job** at the top of the dashboard and paste its title, company and description (location and URL optional). It's stored with the `manual` source, the next `make process` run writes its cover letter before the scraped backlog, and it's never link-checked (those sites often block logged-out requests).
+
 `validate` and `discover` are maintenance/growth steps, not required every run — see [`docs/board-discovery.md`](docs/board-discovery.md) for how they fit together (curate candidates → validate → scrape; mine existing results → discover → review → validate). `check-links` is optional: board postings are already checked by every scrape, so it mostly catches closed Adzuna ads; it checks up to 200 links per run. `contacts` is optional but should run before `process` if you want the cold email addressed to someone. `process` generates `llm.batch_size` cover letters per run (0 = every pending row). On Windows, `run-pipeline.ps1` runs all seven steps in order in one go (with `-SkipApp` to stop before the dashboard); the optional ones warn and carry on if they fail.
 
 > [!CAUTION]
