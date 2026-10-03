@@ -1,4 +1,4 @@
-.PHONY: setup scrape validate discover contacts process app test lint
+.PHONY: setup scrape check-links validate discover contacts process app test lint
 
 # venv binary dir differs by OS (Windows uses Scripts/, POSIX uses bin/)
 ifeq ($(OS),Windows_NT)
@@ -21,27 +21,16 @@ setup:
 	@echo "  2. Edit config.yaml (search terms, llm.model, resume_summary)"
 	@echo "  3. make scrape && make process && make app"
 
+# Fetch postings. Board scrapes also mark jobs gone from their board as dead,
+# and dead postings are moved to data/dead_jobs.db (docs/data-model.md).
 scrape:
 	python -m src.ingestion.cli
+
+# Check the links of postings no scrape has seen lately (in practice Adzuna
+# ads) and mark 404/410s dead, then move them to the archive. Up to 200 per
+# run; add --limit 0 to the command for the whole queue. Optional, any time.
+check-links:
 	python -m src.ingestion.check_links --mark-dead
-
-# Check which configured boards are still live against their public ATS APIs.
-# Tokens go stale — run this anytime. To validate a candidate list and write a
-# clean sources.txt:  python -m src.ingestion.validate sources.candidates.txt --out sources.txt
-validate:
-	python -m src.ingestion.validate
-
-
-# Propose new boards from companies already in your Adzuna results. Writes
-# commented proposals to sources.discovered.txt — review and uncomment to
-# approve, then move the keepers into sources.txt. See docs/board-discovery.md.
-discover:
-	python -m src.ingestion.discover
-
-# Optional, runs after scrape and before process so the cold email can address
-# a contact. Public, in-posting sources only (see docs/hiring-manager-lookup.md).
-contacts:
-	python -m src.contacts.cli
 
 # Check which configured boards are still live against their public ATS APIs.
 # Tokens go stale — run this anytime. To validate a candidate list and write a

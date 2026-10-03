@@ -1,6 +1,8 @@
 # Data Model
 
-There is one table today: `JobPost`, defined in `src/storage/models.py`.
+There is one table today: `JobPost`, defined in `src/storage/models.py`. The
+dead-postings archive (`data/dead_jobs.db`) is a second SQLite file with the
+same table; see "Dead postings and the archive" below.
 
 ```python
 class JobPost(SQLModel, table=True):
@@ -18,6 +20,11 @@ class JobPost(SQLModel, table=True):
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
     contact_confidence: Optional[str] = None
+    dead_at: Optional[datetime] = None
+    dead_reason: Optional[str] = None
+    posted_at: Optional[datetime] = None
+    last_seen_at: Optional[datetime] = None
+    last_checked_at: Optional[datetime] = None
 ```
 
 ## Field reference
@@ -38,6 +45,11 @@ class JobPost(SQLModel, table=True):
 | `contact_name` | `str \| None` | A contact found in the posting's own text, or `None`. See [`docs/hiring-manager-lookup.md`](./hiring-manager-lookup.md). |
 | `contact_email` | `str \| None` | A published address or a flagged guess — never asserted as verified. `None` if none found. |
 | `contact_confidence` | `str \| None` | `"published"` / `"pattern-guess"` / `"none"`. **Also the queue signal:** `pending_contact_jobs()` selects rows where this is null, so a looked-up row (even a miss, set to `"none"`) leaves the queue. Free-text, like `status`. |
+| `dead_at` | `datetime \| None` | Naive UTC. When the posting was found closed; `None` = alive. Set by the scrape (board no longer lists it) or `make check-links` (404/410). The first date is kept if a row is marked dead again; cleared if a scrape returns the posting. |
+| `dead_reason` | `str \| None` | Set with `dead_at`: `"gone from board"`, `"http 404"` or `"http 410"`. Cleared with it. |
+| `posted_at` | `datetime \| None` | Naive UTC. The source's own publish date (Greenhouse `first_published`, falling back to `updated_at`; Lever `createdAt`; Ashby `publishedAt`; Adzuna `created`), or `None` if it doesn't say. Filled in on a later scrape if missing. |
+| `last_seen_at` | `datetime \| None` | Naive UTC. Last time a scrape returned the posting. Board scrapes set it for every listed posting, even ones the filters drop. A recent value keeps the row out of the link-check queue. |
+| `last_checked_at` | `datetime \| None` | Naive UTC. Last time `make check-links` requested the URL, whatever the outcome. |
 
 ## Dedup strategy
 
@@ -72,7 +84,7 @@ SQLite file, `dead_jobs.db`, next to the main database by default
 archive has the same `jobpost` table and columns, so dates, reason, generated
 materials and contact fields are kept for later analysis. `Applied` and
 `Interviewing` rows stay in the main database, marked dead, so jobs you're
-tracking don't disappear. Both `make scrape` and `check_links --mark-dead` run
+tracking don't disappear. Both `make scrape` and `make check-links` run
 the move at the end; `python -m src.storage.archive` runs it alone.
 
 - Rows are matched on `job_board_id`; `id` is **not** preserved across the two

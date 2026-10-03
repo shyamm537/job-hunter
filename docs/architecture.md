@@ -30,6 +30,7 @@ The original plan considered an asyncio worker so the LLM wouldn't block Streaml
 Instead:
 
 - `make scrape` (`src/ingestion/cli.py`) writes `JobPost` rows. New rows have `generated_cover_letter = None` by construction.
+- `make check-links` (`src/ingestion/check_links.py`) picks rows no scrape has seen lately and marks the ones whose link returns 404/410 dead.
 - `make process` (`src/llm/cli.py`) calls `pending_llm_jobs()` (`src/storage/database.py`) to find rows where `generated_cover_letter IS NULL`, generates materials, writes them back.
 - `make app` (`src/app/main.py`) only ever reads, plus writes simple status-field updates (`To Apply` → `Applied` → ...).
 
@@ -45,9 +46,10 @@ Today `backend: ollama` is the only valid value — anything else raises `ValueE
 
 ![Architecture Flowchart](image.png)
 
-1. `make scrape` → `plan_scrapes(sources, filters)` expands Adzuna sources into one search per `(title, location)` and marks ATS boards for post-filtering → each planned scrape runs, ATS results are filtered by `job_matches()` → `upsert_job()` dedupes against `job_board_id` and inserts new rows. One planned scrape failing is logged and skipped, not fatal.
-2. `make process` → `pending_llm_jobs()` finds rows with no cover letter → `OllamaClient.generate()` is called twice per job (cover letter, cold email) using templates from `src/llm/prompts.py` → results written back to the same row.
-3. `make app` → Streamlit reads all rows, renders one expander per job, lets you change `status` inline.
+1. `make scrape` → `plan_scrapes(sources, filters)` expands Adzuna sources into one search per `(title, location)` and marks ATS boards for post-filtering → each planned scrape runs, ATS results are filtered by `job_matches()` → `upsert_job()` dedupes against `job_board_id` and inserts new rows. One planned scrape failing is logged and skipped, not fatal. After each successful board scrape, `reconcile_board()` marks the board's stored rows that it no longer lists as dead (`"gone from board"`) and the rest as seen. At the end, `archive_dead_jobs()` (`src/storage/archive.py`) moves dead `To Apply`/`Rejected` rows to `data/dead_jobs.db`.
+2. `make check-links` (optional) → `link_check_queue()` picks live rows not checked or seen within `--recheck-days` → one GET each → 404/410 marks the row dead → dead rows are archived the same way.
+3. `make process` → `pending_llm_jobs()` finds rows with no cover letter → `OllamaClient.generate()` is called twice per job (cover letter, cold email) using templates from `src/llm/prompts.py` → results written back to the same row.
+4. `make app` → Streamlit reads all rows, renders one expander per job, lets you change `status` inline.
 
 ## What's deliberately not built yet
 

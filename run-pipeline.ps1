@@ -1,11 +1,12 @@
 #requires -Version 5
 <#
-    run-pipeline.ps1 — run the whole Job Hunter AI pipeline, in order, on Windows.
+    run-pipeline.ps1 - run the whole Job Hunter AI pipeline, in order, on Windows.
 
     Equivalent to:
         make discover  ->  python -m src.ingestion.discover
         make validate  ->  python -m src.ingestion.validate
         make scrape    ->  python -m src.ingestion.cli
+        make check-links -> python -m src.ingestion.check_links --mark-dead
         make contacts  ->  python -m src.contacts.cli
         make process   ->  python -m src.llm.cli
         make app       ->  python -m streamlit run src/app/main.py --server.address localhost
@@ -23,6 +24,10 @@ param(
     [string]$Python,
     [switch]$SkipApp
 )
+
+# Keep this file ASCII-only. Windows PowerShell 5.1 reads a script without a
+# byte-order mark in the ANSI codepage, where the UTF-8 bytes of characters like
+# an em dash decode to a curly quote that ends a string early.
 
 $ErrorActionPreference = "Stop"
 # Always run from the repo root (where this script lives), so `python -m src...`
@@ -58,20 +63,22 @@ function Invoke-Step {
     Write-Host ""
     if ($code -ne 0) {
         if ($Optional) {
-            Write-Host "WARNING: '$Name' exited $code — optional step, continuing.`n" -ForegroundColor Yellow
+            Write-Host "WARNING: '$Name' exited $code - optional step, continuing.`n" -ForegroundColor Yellow
         } else {
-            Write-Host "ERROR: '$Name' exited $code — stopping the pipeline." -ForegroundColor Red
+            Write-Host "ERROR: '$Name' exited $code - stopping the pipeline." -ForegroundColor Red
             exit $code
         }
     }
 }
 
-# discover/validate/contacts are prep & enrichment — a hiccup there shouldn't
-# block the core run, so they warn-and-continue. scrape and process are the
-# core pipeline and stop on failure.
+# discover/validate/check-links/contacts are prep & enrichment - a hiccup
+# there shouldn't block the core run, so they warn-and-continue. scrape and
+# process are the core pipeline and stop on failure. check-links runs before
+# contacts/process so closed postings are archived before any work on them.
 Invoke-Step "discover  (propose new boards)"   @("-m", "src.ingestion.discover") -Optional
 Invoke-Step "validate  (check boards are live)" @("-m", "src.ingestion.validate") -Optional
 Invoke-Step "scrape    (fetch postings)"        @("-m", "src.ingestion.cli")
+Invoke-Step "check-links (find closed postings)" @("-m", "src.ingestion.check_links", "--mark-dead") -Optional
 Invoke-Step "contacts  (find a contact)"        @("-m", "src.contacts.cli") -Optional
 Invoke-Step "process   (generate materials)"    @("-m", "src.llm.cli")
 
