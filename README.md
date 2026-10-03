@@ -36,26 +36,28 @@ job-hunter-ai/
 │   │   ├── capture.py       # Dump unfiltered scrape output (debug/fixtures)
 │   │   ├── validate.py      # `make validate` — check board tokens are still live
 │   │   ├── discover.py      # `make discover` — propose new boards from existing postings
+│   │   ├── check_links.py   # `make check-links` — mark postings whose link is gone (404/410) dead
 │   │   ├── http_util.py     # Shared GET-with-retries helper
 │   │   └── cli.py           # `make scrape` — runs every planned scrape
 │   ├── contacts/            # Hiring-contact lookup (public, in-posting text only)
 │   │   ├── extract.py       # Pure function: JobPost -> ContactResult
 │   │   └── cli.py           # `make contacts` — queue consumer
 │   ├── storage/             # ORM + migrations
-│   │   ├── models.py        # SQLModel schema (JobPost, incl. contact_* columns)
-│   │   └── database.py      # Connection handling, CRUD, DB-URL resolution, additive SQLite column migration
+│   │   ├── models.py        # SQLModel schema (JobPost, incl. contact_* and dead-posting columns)
+│   │   ├── database.py      # Connection handling, CRUD, DB-URL resolution, additive SQLite column migration
+│   │   └── archive.py       # Dead postings move to data/dead_jobs.db (kept for analysis)
 │   ├── llm/                 # LLM abstraction layer
 │   │   ├── client.py        # Wraps Ollama / Llama.cpp / OpenAI behind one interface
 │   │   └── prompts.py       # Prompt templates for cover letters, cold emails
 │   └── app/
 │       └── main.py          # Streamlit entry point
-├── data/                    # Local SQLite DB (gitignored)
+├── data/                    # Local SQLite DBs: jobs.db + dead_jobs.db archive (gitignored)
 ├── tests/                   # PyTest suite
 ├── sources.txt              # WHERE to look — one board/search per line (see sources.txt.example)
 ├── sources.candidates.txt   # Unconfirmed boards to (re)check with `make validate`
-├── run-pipeline.ps1         # Windows: runs discover → validate → scrape → contacts → process → app
+├── run-pipeline.ps1         # Windows: runs discover → validate → scrape → check-links → contacts → process → app
 ├── requirements.txt
-├── Makefile                 # make scrape / validate / discover / contacts / process / app
+├── Makefile                 # make scrape / check-links / validate / discover / contacts / process / app
 ├── config.yaml              # filters (titles/locations), sources, LLM + DB settings
 └── README.md
 ```
@@ -110,9 +112,16 @@ class JobPost(SQLModel, table=True):
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
     contact_confidence: Optional[str] = None  # "published" | "pattern-guess" | "none"
+    dead_at: Optional[datetime] = None        # when the posting was found closed
+    dead_reason: Optional[str] = None         # "gone from board" | "http 404" | "http 410"
+    posted_at: Optional[datetime] = None      # the source's own publish date, if given
+    last_seen_at: Optional[datetime] = None   # last time a scrape returned it
+    last_checked_at: Optional[datetime] = None  # last time check_links requested its URL
 ```
 
-`job_board_id` is unique so re-running a scrape doesn't duplicate postings. The three `contact_*` columns are additive — `src/storage/database.py` adds them to an existing SQLite file on first run after upgrading, no manual migration needed. Full field-by-field notes: [`docs/data-model.md`](docs/data-model.md).
+`job_board_id` is unique so re-running a scrape doesn't duplicate postings. Columns added after the first release (`contact_*` and the five dead-posting columns) are additive — `src/storage/database.py` adds them to an existing SQLite file on first run after upgrading, no manual migration needed. Full field-by-field notes: [`docs/data-model.md`](docs/data-model.md).
+
+**Closed postings.** A board scrape marks a job dead when its board stops listing it (`"gone from board"`); `make check-links` does the same for postings whose link returns 404/410 (in practice Adzuna ads, which no board re-lists). Dead postings with status `To Apply` or `Rejected` are then moved to a second SQLite file, `data/dead_jobs.db`, with every column kept for later analysis; `Applied` and `Interviewing` rows stay in `jobs.db`, marked dead. A posting a scrape returns again is restored. See [`docs/data-model.md`](docs/data-model.md#dead-postings-and-the-archive).
 
 ## Getting started
 
@@ -138,6 +147,7 @@ cp sources.txt.example sources.txt  # then edit which boards to scrape
 
 ```bash
 make scrape    # populate data/jobs.db with new postings (sources × filters)
+make check-links  # (optional) mark postings whose link is gone dead, and archive them
 make validate  # check your configured boards are still live (tokens go stale)
 make discover  # propose new boards from companies already in your results
 make contacts  # (optional) find a contact for each posting from its own text
@@ -145,7 +155,7 @@ make process   # generate cover letters / cold emails for pending rows
 make app       # launch the Streamlit dashboard (bound to localhost)
 ```
 
-`validate` and `discover` are maintenance/growth steps, not required every run — see [`docs/board-discovery.md`](docs/board-discovery.md) for how they fit together (curate candidates → validate → scrape; mine existing results → discover → review → validate). `contacts` is optional but should run before `process` if you want the cold email addressed to someone. On Windows, `run-pipeline.ps1` runs all six steps in order in one go (with `-SkipApp` to stop before the dashboard).
+`validate` and `discover` are maintenance/growth steps, not required every run — see [`docs/board-discovery.md`](docs/board-discovery.md) for how they fit together (curate candidates → validate → scrape; mine existing results → discover → review → validate). `check-links` is optional: board postings are already checked by every scrape, so it mostly catches closed Adzuna ads; it checks up to 200 links per run. `contacts` is optional but should run before `process` if you want the cold email addressed to someone. `process` generates `llm.batch_size` cover letters per run (0 = every pending row). On Windows, `run-pipeline.ps1` runs all seven steps in order in one go (with `-SkipApp` to stop before the dashboard); the optional ones warn and carry on if they fail.
 
 > [!CAUTION]
 > Run the dashboard bound to localhost: `streamlit run src/app/main.py --server.address localhost` (`make app` already does this). See the security caution near the top of this README for why.
@@ -168,6 +178,7 @@ Then run each step by pointing at the venv's interpreter (or just run `.\run-pip
 
 ```powershell
 job-hunter\Scripts\python.exe -m src.ingestion.cli       # = make scrape
+job-hunter\Scripts\python.exe -m src.ingestion.check_links --mark-dead   # = make check-links
 job-hunter\Scripts\python.exe -m src.ingestion.validate  # = make validate
 job-hunter\Scripts\python.exe -m src.ingestion.discover  # = make discover
 job-hunter\Scripts\python.exe -m src.contacts.cli        # = make contacts
