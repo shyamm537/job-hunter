@@ -52,6 +52,37 @@ This means: if a posting's *identifying* URL changes (e.g. a board re-publishes 
 
 `To Apply → Applied → Interviewing → Rejected` is enforced only by the Streamlit dropdown (`STATUSES` list in `src/app/main.py`) — the database column is a free-text string with no `CHECK` constraint. Editing a row directly (e.g. via a SQLite browser) could set any string and the app wouldn't reject it.
 
+## Dead postings and the archive
+
+A posting is marked dead (`dead_at`, plus a short `dead_reason`) in two ways:
+
+- **`"gone from board"`**: after a successful scrape of a Greenhouse, Lever
+  or Ashby board, any stored row for that board that the board no longer lists
+  (`reconcile_board()` in `src/storage/database.py`). A board's rows are the
+  `<source>-` rows whose `company` is the board token. A failed or empty scrape
+  changes nothing. Rows still listed get `last_seen_at`, even when the filters
+  drop them, and a dead one is revived.
+- **`"http 404"` / `"http 410"`**: the link checker (`src/ingestion/check_links.py`),
+  for rows no scrape has seen recently. In practice that means Adzuna rows and
+  rows from boards no longer in `sources.txt`.
+
+Dead rows with status `To Apply` or `Rejected` are then **moved** to a separate
+SQLite file, `dead_jobs.db`, next to the main database by default
+(`database.archive_url` overrides it). See `src/storage/archive.py`. The
+archive has the same `jobpost` table and columns, so dates, reason, generated
+materials and contact fields are kept for later analysis. `Applied` and
+`Interviewing` rows stay in the main database, marked dead, so jobs you're
+tracking don't disappear. Both `make scrape` and `check_links --mark-dead` run
+the move at the end; `python -m src.storage.archive` runs it alone.
+
+- Rows are matched on `job_board_id`; `id` is **not** preserved across the two
+  files.
+- If a scrape returns an archived posting again, `upsert_job()` restores it
+  (status and materials intact, `dead_*` cleared) instead of inserting a new
+  row. It gets a new `id`.
+- The move copies first and deletes second, so an interrupted move can be
+  re-run safely.
+
 ## Known looseness (intentional, for now)
 
 - No `CHECK` constraint or enum on `status`.

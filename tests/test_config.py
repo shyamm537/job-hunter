@@ -133,3 +133,8 @@ def test_llm_rejects_negative_values(bad):
 def test_empty_filters_default():
     f = Filters()
     assert f.titles == [] and f.locations == []
+
+
+def test_archive_url_defaults_to_unset():
+    # Unset means "dead_jobs.db next to the main database" (src/storage/archive.py).
+    assert Config.model_validate(MIN).database.archive_url is None

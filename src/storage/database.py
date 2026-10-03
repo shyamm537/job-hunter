@@ -25,7 +25,7 @@ import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterator, List, NamedTuple, Optional, Sequence
+from typing import Collection, Iterator, List, NamedTuple, Optional, Sequence
 
 from sqlalchemy import func, or_, text, update
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -138,12 +138,19 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def upsert_job(session: Session, job: JobPost) -> tuple[JobPost, bool]:
+def upsert_job(
+    session: Session, job: JobPost, archive_session: Optional[Session] = None
+) -> tuple[JobPost, bool]:
     """Insert a job if new; otherwise record that the existing row was seen.
 
     job_board_id is the dedup key, so re-running a scrape never duplicates
     postings. Returns (job, created) so callers can report how many were
     actually new.
+
+    With an `archive_session`, a posting that isn't in the main database but
+    is in the dead-postings archive is restored from there (status, generated
+    materials and dates intact) instead of being inserted fresh, and returned
+    with created=False. See src/storage/archive.py.
 
     Either way the row's last_seen_at is stamped, which is how check_links
     knows a posting is still being returned by its source. For an existing
@@ -173,6 +180,18 @@ def upsert_job(session: Session, job: JobPost) -> tuple[JobPost, bool]:
         session.refresh(existing)
         return existing, False
 
+    if archive_session is not None:
+        from src.storage.archive import restore_from_archive  # avoids an import cycle
+
+        restored = restore_from_archive(session, archive_session, job.job_board_id)
+        if restored is not None:
+            if restored.posted_at is None and job.posted_at is not None:
+                restored.posted_at = job.posted_at
+                session.add(restored)
+                session.commit()
+                session.refresh(restored)
+            return restored, False
+
     if job.last_seen_at is None:
         job.last_seen_at = utcnow()
     session.add(job)
@@ -183,13 +202,17 @@ def upsert_job(session: Session, job: JobPost) -> tuple[JobPost, bool]:
 
 # --- Dead-posting helpers ---------------------------------------------------
 #
-# Used by src/ingestion/check_links.py. The mark_* helpers issue bulk UPDATEs
+# Used by src/ingestion/check_links.py and, through reconcile_board, by the
+# scrape. The mark_* helpers issue bulk UPDATEs
 # and deliberately do NOT commit: the link checker commits in batches, so a
 # long run that is interrupted keeps what it has already recorded.
 
 # Ids per UPDATE statement. SQLite caps bound parameters per statement (999 on
 # older builds), so a long id list is split rather than sent as one IN (...).
 _ID_CHUNK_SIZE = 500
+
+# dead_reason for a board row that its board no longer lists (reconcile_board).
+GONE_FROM_BOARD = "gone from board"
 
 
 def _update_jobs(
@@ -251,6 +274,54 @@ def mark_dead(
         {"dead_at": when or utcnow(), "dead_reason": reason},
         JobPost.dead_at.is_(None),
     )
+
+
+def reconcile_board(
+    session: Session,
+    source: str,
+    token: str,
+    present_ids: Collection[str],
+    *,
+    when: Optional[datetime] = None,
+) -> tuple[int, int, int]:
+    """Compare one board's stored rows with what its scrape just returned.
+
+    `present_ids` is every job_board_id in the board's UNFILTERED scrape. A
+    board's rows are the `<source>-` rows whose company is the board token
+    (the Greenhouse/Lever/Ashby scrapers store the token as company); the
+    token match ignores case.
+
+    - Present rows get last_seen_at, including ones the filters drop, and a
+      dead one is revived (dead_at/dead_reason cleared), as upsert_job does.
+    - Missing rows are marked dead with reason "gone from board"; rows that
+      are already dead keep their first date and reason.
+
+    An empty `present_ids` changes nothing: an empty or failed scrape proves
+    nothing about the board. Does not commit. Returns (seen, revived, newly_dead).
+    """
+    if not present_ids:
+        return 0, 0, 0
+    present = set(present_ids)
+    rows = session.exec(
+        select(JobPost.id, JobPost.job_board_id, JobPost.dead_at).where(
+            JobPost.job_board_id.like(f"{source}-%"),
+            func.lower(JobPost.company) == token.strip().lower(),
+        )
+    ).all()
+
+    seen_ids = [row[0] for row in rows if row[1] in present]
+    revive_ids = [row[0] for row in rows if row[1] in present and row[2] is not None]
+    gone_ids = [row[0] for row in rows if row[1] not in present]
+
+    when = when or utcnow()
+    seen = mark_seen(session, seen_ids, when=when)
+    revived = (
+        _update_jobs(session, revive_ids, {"dead_at": None, "dead_reason": None})
+        if revive_ids
+        else 0
+    )
+    dead = mark_dead(session, gone_ids, GONE_FROM_BOARD, when=when)
+    return seen, revived, dead
 
 
 class LinkCheckItem(NamedTuple):

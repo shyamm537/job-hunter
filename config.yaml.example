@@ -51,4 +51,9 @@ llm:
 # ── Where to store it ───────────────────────────────────────────────────────
 # Optional. Defaults to sqlite:///data/jobs.db. SQLite is the product; a
 # Postgres URL is an open-but-unverified escape hatch (see docs/configuration.md).
-# Can also be set via the JOBHUNTER_DATA
+# Can also be set via the JOBHUNTER_DATABASE_URL environment variable.
+# Dead postings ("To Apply"/"Rejected") are moved to an archive database kept
+# for analysis; it defaults to dead_jobs.db next to the main database.
+# database:
+#   url: "sqlite:///data/jobs.db"
+#   archive_url: "sqlite:///data/dead_jobs.db"

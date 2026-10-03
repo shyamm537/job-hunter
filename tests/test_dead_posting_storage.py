@@ -12,6 +12,7 @@ from sqlmodel import select
 
 import src.storage.database as database
 from src.storage.database import (
+    GONE_FROM_BOARD,
     LinkCheckItem,
     count_link_check_queue,
     get_session,
@@ -20,6 +21,7 @@ from src.storage.database import (
     mark_checked,
     mark_dead,
     mark_seen,
+    reconcile_board,
     upsert_job,
     utcnow,
 )
@@ -579,3 +581,103 @@ def test_upsert_existing_row_leaves_everything_else_untouched(db):
     assert row.contact_confidence == "published"
     assert row.date_scraped == T1
     assert row.last_checked_at == T2
+
+
+# --- reconcile_board (KAN-25) -------------------------------------------------
+
+
+def _board_job(job_board_id, company="acme", **overrides):
+    values = dict(
+        job_board_id=job_board_id, title="Data Analyst", company=company,
+        location="Remote", description="d", url=f"https://x/{job_board_id}",
+    )
+    values.update(overrides)
+    return JobPost(**values)
+
+
+def _by_id():
+    with get_session() as session:
+        return {r.job_board_id: r for r in session.exec(select(JobPost)).all()}
+
+
+def test_reconcile_marks_present_seen_and_missing_dead(db):
+    with get_session() as session:
+        session.add_all([_board_job("greenhouse-1"), _board_job("greenhouse-2")])
+        session.commit()
+        counts = reconcile_board(session, "greenhouse", "acme", {"greenhouse-1"}, when=NOW)
+        session.commit()
+
+    assert counts == (1, 0, 1)
+    rows = _by_id()
+    assert rows["greenhouse-1"].last_seen_at == NOW
+    assert rows["greenhouse-1"].dead_at is None
+    assert rows["greenhouse-2"].dead_at == NOW
+    assert rows["greenhouse-2"].dead_reason == GONE_FROM_BOARD
+
+
+def test_reconcile_revives_a_present_dead_row(db):
+    with get_session() as session:
+        session.add(_board_job("greenhouse-1", dead_at=T1, dead_reason="http 404"))
+        session.commit()
+        counts = reconcile_board(session, "greenhouse", "acme", {"greenhouse-1"}, when=NOW)
+        session.commit()
+
+    assert counts == (1, 1, 0)
+    row = _by_id()["greenhouse-1"]
+    assert row.dead_at is None and row.dead_reason is None
+
+
+def test_reconcile_keeps_the_first_death_of_a_missing_row(db):
+    with get_session() as session:
+        session.add_all([
+            _board_job("greenhouse-1"),
+            _board_job("greenhouse-2", dead_at=T1, dead_reason="http 404"),
+        ])
+        session.commit()
+        counts = reconcile_board(session, "greenhouse", "acme", {"greenhouse-1"}, when=NOW)
+        session.commit()
+
+    assert counts == (1, 0, 0)
+    row = _by_id()["greenhouse-2"]
+    assert row.dead_at == T1 and row.dead_reason == "http 404"
+
+
+def test_reconcile_matches_source_prefix_and_token_ignoring_case(db):
+    with get_session() as session:
+        session.add_all([
+            _board_job("greenhouse-1", company="Acme"),   # same board, other case
+            _board_job("greenhouse-2", company="other"),  # other board
+            _board_job("lever-3"),                        # same token, other ATS
+            _board_job("adzuna-4"),                       # search row
+        ])
+        session.commit()
+        reconcile_board(session, "greenhouse", "ACME ", {"greenhouse-x"}, when=NOW)
+        session.commit()
+
+    rows = _by_id()
+    assert rows["greenhouse-1"].dead_reason == GONE_FROM_BOARD
+    for job_board_id in ("greenhouse-2", "lever-3", "adzuna-4"):
+        assert rows[job_board_id].dead_at is None, job_board_id
+        assert rows[job_board_id].last_seen_at is None, job_board_id
+
+
+def test_reconcile_with_no_present_ids_changes_nothing(db):
+    with get_session() as session:
+        session.add(_board_job("greenhouse-1"))
+        session.commit()
+        assert reconcile_board(session, "greenhouse", "acme", set(), when=NOW) == (0, 0, 0)
+        session.commit()
+
+    row = _by_id()["greenhouse-1"]
+    assert row.dead_at is None and row.last_seen_at is None
+
+
+def test_reconcile_does_not_commit(db_url, tmp_path):
+    init_db()
+    with get_session() as session:
+        session.add(_board_job("greenhouse-1"))
+        session.commit()
+        reconcile_board(session, "greenhouse", "acme", {"greenhouse-x"}, when=NOW)
+        session.rollback()
+
+    assert _by_id()["greenhouse-1"].dead_at is None

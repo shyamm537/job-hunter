@@ -2,6 +2,9 @@
 
 No network and no real sleeping: the HTTP session is a fake, DELAY is set to
 0, config is mocked and the database is a temp on-disk SQLite file.
+
+A --mark-dead run ends by moving dead postings to the archive (a dead_jobs.db
+next to the temp database), so the row helpers below read both files.
 """
 
 import logging
@@ -11,6 +14,7 @@ import pytest
 from sqlmodel import select
 
 import src.config as config
+import src.storage.archive as archive
 import src.storage.database as database
 from src.ingestion import check_links
 from src.storage.models import JobPost
@@ -77,6 +81,8 @@ def db(tmp_path, monkeypatch):
     yield path
     database._database_url = None
     database._engine = None
+    archive._archive_url = None
+    archive._archive_engine = None
 
 
 def _seed(urls):
@@ -98,10 +104,19 @@ def _seed(urls):
         return [post.id for post in posts]
 
 
-def _rows():
-    """Every posting as stored right now, keyed by URL."""
+def _all_rows():
+    """Every posting in the main database and the archive."""
     with database.get_session() as session:
-        return {row.url: row for row in session.exec(select(JobPost)).all()}
+        rows = list(session.exec(select(JobPost)).all())
+    if archive._archive_url is not None:  # set once a --mark-dead run archived
+        with archive.get_archive_session() as archive_session:
+            rows += list(archive_session.exec(select(JobPost)).all())
+    return rows
+
+
+def _rows():
+    """Every posting as stored right now (main database or archive), keyed by URL."""
+    return {row.url: row for row in _all_rows()}
 
 
 def _urls(n):
@@ -172,8 +187,7 @@ def test_identical_urls_are_requested_once(db, monkeypatch):
     assert sleeps == [0.25]  # one pause, between the two real requests
     rows = _rows()
     assert rows[other].dead_at is None
-    with database.get_session() as session:
-        dead = session.exec(select(JobPost).where(JobPost.dead_at.is_not(None))).all()
+    dead = [row for row in _all_rows() if row.dead_at is not None]
     assert len(dead) == 2  # both postings sharing the URL get the result
     assert {row.url for row in dead} == {same}
 
@@ -274,14 +288,20 @@ def test_default_limit_caps_the_run(db):
 
 def _committed_checked_count(path):
     """Rows with last_checked_at set, as seen from a separate connection —
-    i.e. only what has actually been committed."""
-    conn = sqlite3.connect(path)
-    try:
-        return conn.execute(
-            "SELECT COUNT(*) FROM jobpost WHERE last_checked_at IS NOT NULL"
-        ).fetchone()[0]
-    finally:
-        conn.close()
+    i.e. only what has actually been committed. Counts the archive file next
+    to `path` too, once it exists."""
+    total = 0
+    for db_file in (path, path.parent / archive.ARCHIVE_FILENAME):
+        if not db_file.exists():
+            continue
+        conn = sqlite3.connect(db_file)
+        try:
+            total += conn.execute(
+                "SELECT COUNT(*) FROM jobpost WHERE last_checked_at IS NOT NULL"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+    return total
 
 
 def _interrupt_on_request(n):
@@ -448,3 +468,45 @@ def test_dead_out_lists_the_dead_postings(db, tmp_path, extra_args):
     assert sorted(lines[1:]) == sorted(
         [f"{ids[0]}\t{urls[0]}\thttp 404", f"{ids[2]}\t{urls[2]}\thttp 410"]
     )
+
+
+# --- archive -------------------------------------------------------------------
+
+
+def test_mark_dead_moves_dead_postings_to_the_archive(db):
+    gone, live = _urls(2)
+    _seed([gone, live])
+    http = FakeHttp({gone: FakeResponse(404, "not found")})
+
+    check_links.main(["--mark-dead"], http=http)
+
+    with database.get_session() as session:
+        assert [row.url for row in session.exec(select(JobPost)).all()] == [live]
+    with archive.get_archive_session() as archive_session:
+        (archived,) = archive_session.exec(select(JobPost)).all()
+    assert archived.url == gone
+    assert archived.dead_reason == "http 404"
+    assert (db.parent / archive.ARCHIVE_FILENAME).exists()
+
+
+def test_dry_run_archives_nothing(db):
+    _seed(_urls(2))
+
+    check_links.main([], http=FakeHttp(default=FakeResponse(404, "gone")))
+
+    assert len(_all_rows()) == 2
+    assert not (db.parent / archive.ARCHIVE_FILENAME).exists()
+
+
+def test_applied_posting_stays_in_the_main_database_when_dead(db):
+    (url,) = _urls(1)
+    (job_id,) = _seed([url])
+    with database.get_session() as session:
+        database.set_job_status(session, job_id, "Applied")
+
+    check_links.main(["--mark-dead"], http=FakeHttp(default=FakeResponse(404, "gone")))
+
+    with database.get_session() as session:
+        row = session.get(JobPost, job_id)
+    assert row is not None and row.status == "Applied"
+    assert row.dead_reason == "http 404"
