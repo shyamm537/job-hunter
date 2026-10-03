@@ -21,13 +21,14 @@ URLs as open-but-unimplemented: the wiring won't stop you, the testing
 hasn't happened.
 """
 
+import hashlib
 import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Collection, Iterator, List, NamedTuple, Optional, Sequence
 
-from sqlalchemy import func, or_, text, update
+from sqlalchemy import case, func, or_, text, update
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from src.config import DEFAULT_DATABASE_URL
@@ -200,6 +201,59 @@ def upsert_job(
     return job, True
 
 
+# --- Jobs added by hand ------------------------------------------------------
+
+# Source prefix for jobs added from the dashboard (pasted from LinkedIn, SEEK,
+# Naukri, ...). No scraper owns them: they're never board-reconciled or
+# link-checked, and `make process` does them first.
+MANUAL_SOURCE = "manual"
+
+
+def manual_job_board_id(*, title: str, company: str, description: str, url: str = "") -> str:
+    """`manual-<sha1[:10]>` of the URL, or of title + company + description when
+    there's no URL, so adding the same job twice finds the first one."""
+    key = url.strip() or "\n".join(
+        part.strip().lower() for part in (title, company, description)
+    )
+    return f"{MANUAL_SOURCE}-{hashlib.sha1(key.encode()).hexdigest()[:10]}"
+
+
+def add_manual_job(
+    session: Session,
+    *,
+    title: str,
+    company: str,
+    description: str,
+    location: str = "",
+    url: str = "",
+) -> tuple[JobPost, bool]:
+    """Store a job you found yourself. Returns (job, created).
+
+    Title, company and description are required (the description is what the
+    cover letter is written from); surrounding whitespace is trimmed. Adding a
+    job that's already stored (same URL, or same title/company/description
+    without one) returns the existing row with created=False.
+    """
+    title, company, description = title.strip(), company.strip(), description.strip()
+    location, url = location.strip(), url.strip()
+    missing = [name for name, value in
+               (("title", title), ("company", company), ("description", description))
+               if not value]
+    if missing:
+        raise ValueError(f"missing {', '.join(missing)}")
+    job = JobPost(
+        job_board_id=manual_job_board_id(
+            title=title, company=company, description=description, url=url
+        ),
+        title=title,
+        company=company,
+        location=location,
+        description=description,
+        url=url,
+    )
+    return upsert_job(session, job)
+
+
 # --- Dead-posting helpers ---------------------------------------------------
 #
 # Used by src/ingestion/check_links.py and, through reconcile_board, by the
@@ -343,6 +397,10 @@ def _link_check_conditions(recheck_days: int, now: Optional[datetime]) -> list:
     cutoff = (now or utcnow()) - timedelta(days=recheck_days)
     return [
         JobPost.dead_at.is_(None),
+        # Hand-added jobs are never URL-checked: LinkedIn/Naukri-style pages
+        # often block or redirect logged-out requests, which could mark a live
+        # job dead. You track those yourself.
+        JobPost.job_board_id.not_like(f"{MANUAL_SOURCE}-%"),
         # NULL fails this comparison too, so a NULL url is excluded as well.
         func.trim(JobPost.url) != "",
         or_(JobPost.last_checked_at.is_(None), JobPost.last_checked_at < cutoff),
@@ -404,8 +462,19 @@ def pending_llm_jobs(session: Session, limit: int | None = None) -> List[JobPost
     unattended run can stop after a fixed number of jobs). `None` — the
     default — returns the whole queue, preserving the original behaviour for
     every other caller.
+
+    Order: jobs you added by hand come first (oldest first), so the next
+    `make process` run does yours before the scraped backlog; then the rest
+    in insertion order, as before.
     """
-    statement = select(JobPost).where(JobPost.generated_cover_letter.is_(None))
+    statement = (
+        select(JobPost)
+        .where(JobPost.generated_cover_letter.is_(None))
+        .order_by(
+            case((JobPost.job_board_id.like(f"{MANUAL_SOURCE}-%"), 0), else_=1),
+            JobPost.id.asc(),
+        )
+    )
     if limit is not None:
         statement = statement.limit(limit)
     return list(session.exec(statement).all())
@@ -452,7 +521,7 @@ def pending_contact_jobs(session: Session) -> List[JobPost]:
 # Every job_board_id is "<source>-<hash>" (see src/ingestion/*). The source is
 # the prefix before the first dash; no source name contains a dash, so a
 # LIKE '<source>-%' filter is exact.
-KNOWN_SOURCES = ("adzuna", "greenhouse", "lever", "ashby")
+KNOWN_SOURCES = ("adzuna", "greenhouse", "lever", "ashby", MANUAL_SOURCE)
 
 
 class JobSummary(NamedTuple):
