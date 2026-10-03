@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Add a job{% endblock %}
+{% block content %}
+<article class="narrow">
+  <h1>Add a job</h1>
+  <p class="muted">Found a role on LinkedIn, SEEK or Naukri? Paste it here. The next
+    <code>make process</code> run writes its cover letter before the scraped backlog.</p>
+  {% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
+  <form method="post" action="{{ url_for('web.add_job') }}">
+    <label for="title">Title *</label>
+    <input id="title" name="title" value="{{ form.title }}" required>
+
+    <label for="company">Company *</label>
+    <input id="company" name="company" value="{{ form.company }}" required>
+
+    <label for="location">Location</label>
+    <input id="location" name="location" value="{{ form.location }}">
+
+    <label for="url">Job URL</label>
+    <input id="url" name="url" type="url" placeholder="https://..." value="{{ form.url }}">
+
+    <label for="description">Job description *</label>
+    <textarea id="description" name="description" rows="12" required
+      placeholder="Paste the full description: the cover letter is written from it.">{{ form.description }}</textarea>
+
+    <div class="actions"><button type="submit">Add job</button></div>
+  </form>
+</article>
+{% endblock %}

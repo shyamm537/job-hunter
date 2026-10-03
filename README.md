@@ -1,17 +1,15 @@
 # Job Hunter AI
 
-A local-first job application pipeline: discover and scrape postings across Adzuna and ATS boards (Greenhouse, Lever, Ashby), store them in a database, look up a public contact for each posting, generate tailored cover letters and cold emails with a local LLM, and track application status — all from a Streamlit dashboard.
+A local-first job application pipeline: discover and scrape postings across Adzuna and ATS boards (Greenhouse, Lever, Ashby), store them in a database, look up a public contact for each posting, generate tailored cover letters and cold emails with a local LLM, and track application status — all from a small local web dashboard.
 
 No cloud dependency required. Runs on SQLite + Ollama by default. SQLite is the product; Postgres is a documented escape hatch that would need a real test pass before you trusted it (the URL is configurable and the abstraction can speak Postgres, but that path is unverified and no driver is pinned — see [`docs/configuration.md`](docs/configuration.md) and `TODO.md`). A hosted LLM is likewise an open, not-yet-built option.
 
-> [!CAUTION]
-> **Always run the dashboard bound to localhost.** Launch Streamlit as
-> `streamlit run src/app/main.py --server.address localhost` (the `make app`
-> target already does this for you). By default Streamlit binds to **all**
-> network interfaces (`0.0.0.0`), which exposes your dashboard — and the job
-> data in it — to anyone on your local network. Binding to `localhost` keeps it
-> reachable only from your own machine. This is the current security baseline;
-> further hardening is tracked in `TODO.md`.
+> [!NOTE]
+> **The dashboard is local-only.** `make app` (`python -m src.app`) serves it on
+> `http://127.0.0.1:8000`, never on your network. It also refuses requests whose
+> `Host` isn't `localhost`/`127.0.0.1` (blocking DNS-rebinding) and form posts
+> from other origins, so a web page you visit can't change your data. There's
+> no login; further hardening is tracked in `TODO.md`.
 
 ## Why this exists
 
@@ -49,8 +47,12 @@ job-hunter-ai/
 │   ├── llm/                 # LLM abstraction layer
 │   │   ├── client.py        # Wraps Ollama / Llama.cpp / OpenAI behind one interface
 │   │   └── prompts.py       # Prompt templates for cover letters, cold emails
-│   └── app/
-│       └── main.py          # Streamlit entry point
+│   └── app/                 # The dashboard: a small Flask app (`make app`)
+│       ├── __init__.py      # create_app(): config + database
+│       ├── __main__.py      # `python -m src.app` — serves on 127.0.0.1:8000
+│       ├── web.py           # Routes: jobs list, job page, status changes, "Add a job"
+│       ├── templates/       # Jinja templates
+│       └── static/          # style.css
 ├── data/                    # Local SQLite DBs: jobs.db + dead_jobs.db archive (gitignored)
 ├── tests/                   # PyTest suite
 ├── sources.txt              # WHERE to look — one board/search per line (see sources.txt.example)
@@ -68,7 +70,7 @@ job-hunter-ai/
 
 **Filters are separate from sources.** `config.yaml` splits *what* you want (`filters.titles`, `filters.locations`) from *where* you look (`sources` / `sources_file`). Adzuna is a search engine, so each `(title, location)` pair becomes a query. ATS boards (Greenhouse, Lever, Ashby) return a company's whole list, so the same filters are applied to the results afterwards. `src/ingestion/planner.py` is what combines the two. See `docs/configuration.md`.
 
-**Queue via the database, not asyncio.** Streamlit's threading model doesn't play well with background async workers updating UI state — you end up fighting race conditions for no real benefit at this scale. Instead, each stage writes rows with the next stage's column left `NULL`, and a separate CLI script selects exactly those rows, does its work, and writes back: `make scrape` leaves `generated_cover_letter`/`contact_confidence` null, `make contacts` fills `contact_*` (queue: `contact_confidence IS NULL`), `make process` fills the generated materials (queue: `generated_cover_letter IS NULL`). Streamlit only ever reads from the database, plus simple status-field edits. No in-flight state to lose, and any step can be re-run safely.
+**Queue via the database, not asyncio.** Background async workers pushing updates into a UI mean fighting race conditions for no real benefit at this scale. Instead, each stage writes rows with the next stage's column left `NULL`, and a separate CLI script selects exactly those rows, does its work, and writes back: `make scrape` leaves `generated_cover_letter`/`contact_confidence` null, `make contacts` fills `contact_*` (queue: `contact_confidence IS NULL`), `make process` fills the generated materials (queue: `generated_cover_letter IS NULL`). The dashboard only reads from the database, plus status edits and jobs you add by hand; it never runs a scrape or the LLM. No in-flight state to lose, and any step can be re-run safely.
 
 **LLM abstraction layer.** `llm/client.py` wraps whatever inference backend you're running (Ollama locally by default) behind one interface, so swapping to Llama.cpp or an OpenAI-compatible API is a config change, not a rewrite. Only `OllamaClient` exists today.
 
@@ -152,15 +154,14 @@ make validate  # check your configured boards are still live (tokens go stale)
 make discover  # propose new boards from companies already in your results
 make contacts  # (optional) find a contact for each posting from its own text
 make process   # generate cover letters / cold emails for pending rows
-make app       # launch the Streamlit dashboard (bound to localhost)
+make app       # serve the dashboard on http://127.0.0.1:8000 and open it
 ```
 
 **Adding a job by hand.** Found a role on LinkedIn, SEEK or Naukri? Open **Add a job** at the top of the dashboard and paste its title, company and description (location and URL optional). It's stored with the `manual` source, the next `make process` run writes its cover letter before the scraped backlog, and it's never link-checked (those sites often block logged-out requests).
 
 `validate` and `discover` are maintenance/growth steps, not required every run — see [`docs/board-discovery.md`](docs/board-discovery.md) for how they fit together (curate candidates → validate → scrape; mine existing results → discover → review → validate). `check-links` is optional: board postings are already checked by every scrape, so it mostly catches closed Adzuna ads; it checks up to 200 links per run. `contacts` is optional but should run before `process` if you want the cold email addressed to someone. `process` generates `llm.batch_size` cover letters per run (0 = every pending row). On Windows, `run-pipeline.ps1` runs all seven steps in order in one go (with `-SkipApp` to stop before the dashboard); the optional ones warn and carry on if they fail.
 
-> [!CAUTION]
-> Run the dashboard bound to localhost: `streamlit run src/app/main.py --server.address localhost` (`make app` already does this). See the security caution near the top of this README for why.
+`make app` takes `--port N` and `--no-browser` if you run it directly: `python -m src.app --port 8001`.
 
 ### Windows (no `make`)
 
@@ -185,7 +186,7 @@ job-hunter\Scripts\python.exe -m src.ingestion.validate  # = make validate
 job-hunter\Scripts\python.exe -m src.ingestion.discover  # = make discover
 job-hunter\Scripts\python.exe -m src.contacts.cli        # = make contacts
 job-hunter\Scripts\python.exe -m src.llm.cli             # = make process
-job-hunter\Scripts\streamlit.exe run src\app\main.py --server.address localhost   # = make app
+job-hunter\Scripts\python.exe -m src.app               # = make app
 job-hunter\Scripts\python.exe -m pytest tests\           # = make test
 ```
 
@@ -205,7 +206,7 @@ This is being built incrementally. Rough sequence:
 2. One working scraper (SEEK public feed) implementing `BaseScraper` — the feed later went dead and the scraper was removed (KAN-32)
 3. LLM client wrapper + cover letter / cold email prompt templates (done)
 4. `make process` queue consumer (done)
-5. Streamlit dashboard (read-only view + status updates) (done)
+5. Dashboard (read-only view + status updates) — first in Streamlit, replaced by a small Flask app in KAN-33 (done)
 6. Second scraper (Greenhouse public board API) to prove the Strategy Pattern decouples cleanly (done)
 7. CI workflow (lint + pytest on push) (done)
 8. Pydantic-validated config + multi-source/multi-search support (done)

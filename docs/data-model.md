@@ -63,7 +63,7 @@ This means: if a posting's *identifying* URL changes (e.g. a board re-publishes 
 
 ## Status lifecycle
 
-`To Apply → Applied → Interviewing → Rejected` is enforced only by the Streamlit dropdown (`STATUSES` list in `src/app/main.py`) — the database column is a free-text string with no `CHECK` constraint. Editing a row directly (e.g. via a SQLite browser) could set any string and the app wouldn't reject it.
+`To Apply → Applied → Interviewing → Rejected` is enforced only by the dashboard (`STATUSES` in `src/app/web.py`; a POST with any other status is refused) — the database column is a free-text string with no `CHECK` constraint. Editing a row directly (e.g. via a SQLite browser) could set any string and the app wouldn't reject it.
 
 ## Dead postings and the archive
 

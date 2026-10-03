@@ -9,7 +9,7 @@
         make check-links -> python -m src.ingestion.check_links --mark-dead
         make contacts  ->  python -m src.contacts.cli
         make process   ->  python -m src.llm.cli
-        make app       ->  python -m streamlit run src/app/main.py --server.address localhost
+        make app       ->  python -m src.app   (dashboard on http://127.0.0.1:8000)
 
     Usage (from the repo root):
         .\run-pipeline.ps1
@@ -84,10 +84,10 @@ Invoke-Step "process   (generate materials)"    @("-m", "src.llm.cli")
 
 if ($SkipApp) {
     Write-Host "Done (skipped app). Launch the dashboard with:" -ForegroundColor Cyan
-    Write-Host "    $Python -m streamlit run src/app/main.py --server.address localhost"
+    Write-Host "    $Python -m src.app"
     exit 0
 }
 
-# app is last because it blocks: it starts the Streamlit server and runs until
+# app is last because it blocks: it starts the dashboard server and runs until
 # you press Ctrl+C. Bound to localhost (matches `make app`).
-Invoke-Step "app       (launch dashboard)" @("-m", "streamlit", "run", "src/app/main.py", "--server.address", "localhost")
+Invoke-Step "app       (launch dashboard)" @("-m", "src.app")

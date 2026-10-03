@@ -1,6 +1,6 @@
 # Documentation
 
-This is placeholder documentation scaffolded against the current state of the codebase — the storage layer, one scraper, the LLM wrapper, and the Streamlit dashboard. Sections marked **(TODO)** describe intent or open questions, not working code. As the project grows, treat these as living documents to update alongside the code they describe, not as a spec written in advance of it.
+This is placeholder documentation scaffolded against the current state of the codebase — the storage layer, one scraper, the LLM wrapper, and the dashboard. Sections marked **(TODO)** describe intent or open questions, not working code. As the project grows, treat these as living documents to update alongside the code they describe, not as a spec written in advance of it.
 
 | Doc | Covers |
 |---|---|

@@ -1,0 +1,93 @@
+/* Job Hunter AI dashboard. One small stylesheet, light and dark. */
+:root {
+  --bg: #ffffff;
+  --surface: #f5f6f8;
+  --text: #1c1e21;
+  --muted: #5f6670;
+  --border: #d9dce1;
+  --accent: #2357c6;
+  --warning-bg: #fff4d6;
+  --success-bg: #e3f4e8;
+  --error-bg: #fde4e4;
+  --info-bg: #e5eefc;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171a;
+    --surface: #1f2226;
+    --text: #e6e8eb;
+    --muted: #9aa1ab;
+    --border: #33373d;
+    --accent: #7aa5ff;
+    --warning-bg: #3d3216;
+    --success-bg: #183324;
+    --error-bg: #3d1d1d;
+    --info-bg: #1b2a44;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+a { color: var(--accent); }
+code { font-size: 0.9em; }
+h1 { margin: 0 0 0.5rem; font-size: 1.6rem; }
+h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+.muted { color: var(--muted); }
+
+.topbar {
+  display: flex; align-items: center; gap: 1.5rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.brand { font-weight: 700; color: var(--text); text-decoration: none; }
+.topbar nav { display: flex; gap: 1rem; }
+main { padding: 1.5rem; }
+
+.layout { display: grid; grid-template-columns: 240px 1fr; gap: 2rem; align-items: start; }
+/* Grid items won't shrink below their content by default; let the table
+   column scroll on its own instead of pushing the page sideways. */
+.layout > section { min-width: 0; overflow-x: auto; }
+@media (max-width: 760px) { .layout { grid-template-columns: 1fr; } }
+
+.filters { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+.filters h2 { margin-top: 0; }
+fieldset { border: 0; margin: 0.75rem 0; padding: 0; }
+legend, label { display: block; font-weight: 600; margin: 0.75rem 0 0.25rem; }
+label.check { font-weight: 400; margin: 0.15rem 0; }
+
+input, select, textarea, button {
+  font: inherit; color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.4rem 0.55rem;
+}
+input:not([type="checkbox"]), select, textarea { width: 100%; }
+textarea { resize: vertical; }
+button { cursor: pointer; background: var(--accent); color: #fff; border-color: var(--accent); }
+.actions { display: flex; gap: 1rem; align-items: center; margin-top: 1rem; }
+
+table.jobs { width: 100%; border-collapse: collapse; }
+.jobs th, .jobs td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.jobs th { color: var(--muted); font-weight: 600; }
+.jobs tbody tr:hover { background: var(--surface); }
+.jobs td select { width: auto; padding: 0.2rem 0.4rem; }
+
+.job, .narrow { max-width: 820px; }
+.meta { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
+.meta dt { color: var(--muted); }
+.meta dd { margin: 0; overflow-wrap: anywhere; }
+.status { max-width: 240px; }
+details { margin: 1rem 0; }
+summary { cursor: pointer; font-weight: 600; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 0.5rem; }
+
+.notice { padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border); }
+.notice-success { background: var(--success-bg); }
+.notice-info { background: var(--info-bg); }
+.notice-warning { background: var(--warning-bg); }
+.notice-error { background: var(--error-bg); }

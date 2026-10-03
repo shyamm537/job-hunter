@@ -53,7 +53,7 @@ process:
 	python -m src.llm.cli
 
 app:
-	streamlit run src/app/main.py --server.address localhost
+	python -m src.app
 
 test:
 	pytest tests/

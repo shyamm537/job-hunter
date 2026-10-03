@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }}{% endblock %}
+{% block content %}
+<article class="job">
+  <p><a href="{{ url_for('web.jobs') }}">&larr; All jobs</a></p>
+  <h1>{{ job.title }}</h1>
+  <dl class="meta">
+    <dt>Company</dt><dd>{{ job.company }}</dd>
+    {% if job.location %}<dt>Location</dt><dd>{{ job.location }}</dd>{% endif %}
+    {% if job.url %}
+      <dt>Posting</dt>
+      <dd>{% if job.url|http_url %}<a href="{{ job.url|http_url }}" target="_blank" rel="noopener noreferrer">{{ job.url }}</a>{% else %}{{ job.url }}{% endif %}</dd>
+    {% endif %}
+  </dl>
+
+  <form class="status" method="post" action="{{ url_for('web.update_status', job_id=job.id) }}">
+    <input type="hidden" name="next" value="{{ here }}">
+    <label for="status">Status</label>
+    <select id="status" name="status" onchange="this.form.submit()">
+      {% for status in statuses %}
+        <option{% if status == job.status %} selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+    <noscript><button type="submit">Save</button></noscript>
+  </form>
+
+  {# Always show the confidence, so a guessed address is never mistaken for a verified one. #}
+  {% if job.contact_email %}
+    {% set who = " (" ~ job.contact_name ~ ")" if job.contact_name else "" %}
+    {% if job.contact_confidence == "pattern-guess" %}
+      <p class="notice notice-warning"><strong>Candidate contact:</strong> {{ job.contact_email }}{{ who }}
+        &mdash; <strong>guessed</strong> from the company email pattern, unverified. Check before sending.</p>
+    {% else %}
+      <p><strong>Contact:</strong> {{ job.contact_email }}{{ who }} &middot; <em>{{ job.contact_confidence }}</em></p>
+    {% endif %}
+  {% elif job.contact_name %}
+    <p><strong>Contact name:</strong> {{ job.contact_name }} (no email found)</p>
+  {% elif job.contact_confidence is none %}
+    <p class="muted">Contact lookup not run yet &mdash; run <code>make contacts</code>.</p>
+  {% endif %}
+
+  {% if job.description %}
+    <details>
+      <summary>Job description</summary>
+      {# Plain text, never HTML: tags are stripped and the result escaped. #}
+      <div class="text">{{ job.description|plain_text }}</div>
+    </details>
+  {% endif %}
+
+  <h2>Cover letter</h2>
+  {% if job.generated_cover_letter %}
+    <textarea readonly rows="14" aria-label="Cover letter">{{ job.generated_cover_letter }}</textarea>
+  {% else %}
+    <p class="muted">No cover letter generated yet &mdash; run <code>make process</code>.</p>
+  {% endif %}
+
+  <h2>Cold email</h2>
+  {% if job.generated_cold_email %}
+    <textarea readonly rows="9" aria-label="Cold email">{{ job.generated_cold_email }}</textarea>
+  {% else %}
+    <p class="muted">No cold email generated yet &mdash; run <code>make process</code>.</p>
+  {% endif %}
+</article>
+{% endblock %}

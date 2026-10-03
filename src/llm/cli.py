@@ -1,8 +1,8 @@
 """Entry point for `make process`.
 
 This is the queue consumer: it reads jobs with no generated cover letter
-yet, calls the LLM client for each, and writes the results back. Streamlit
-never calls the LLM directly — it only reads what this script produces.
+yet, calls the LLM client for each, and writes the results back. The
+dashboard never calls the LLM directly — it only reads what this script produces.
 
 Config and logging go through the shared layers (`src/config.py`,
 `src/logging_config.py`) like the rest of the pipeline. The LLM client
