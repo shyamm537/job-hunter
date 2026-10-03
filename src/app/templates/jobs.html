@@ -3,6 +3,9 @@
 <div class="layout">
   <form class="filters" method="get" action="{{ url_for('web.jobs') }}">
     <h2>Filters</h2>
+    {# f=1 marks a submitted filter form, so unticking every status shows them all. #}
+    <input type="hidden" name="f" value="1">
+    <input type="hidden" name="sort" value="{{ selected.sort }}">
 
     <label for="q">Title contains</label>
     <input id="q" name="q" type="search" value="{{ selected.q }}">
@@ -23,6 +26,7 @@
         <label class="check"><input type="checkbox" name="status" value="{{ status }}"
           {% if status in selected.statuses %}checked{% endif %}> {{ status }}</label>
       {% endfor %}
+      <p class="hint muted">None ticked = every status.</p>
     </fieldset>
 
     <label for="company">Company</label>
@@ -43,21 +47,49 @@
 
     <div class="actions">
       <button type="submit">Apply</button>
-      {% if any_filter %}<a href="{{ url_for('web.jobs') }}">Clear</a>{% endif %}
+      {% if any_filter %}<a href="{{ url_for('web.jobs') }}">Back to queue</a>{% endif %}
     </div>
   </form>
 
   <section>
-    <h1>Jobs</h1>
+    <h1>{% if queue_view %}To Apply{% else %}Jobs{% endif %}</h1>
     {% if jobs %}
-      <p class="muted">{{ jobs|length }} job(s){% if any_filter %} matching filters{% endif %}.</p>
+      <div class="listbar">
+        <p class="muted">
+          {{ jobs|length }} job(s){% if any_filter %} matching filters{% endif %}
+          &middot; {{ unread }} unread
+          {% if new_ids %}&middot; <span class="badge">{{ new_ids|length }} new</span>{% endif %}
+        </p>
+        {% if unread %}
+        <form method="post" action="{{ url_for('web.mark_read') }}">
+          <input type="hidden" name="next" value="{{ here }}">
+          <button type="submit" class="secondary">Mark these as read</button>
+        </form>
+        {% endif %}
+      </div>
       <table class="jobs">
-        <thead><tr><th>Title</th><th>Company</th><th>Status</th><th>Location</th></tr></thead>
+        <thead><tr>
+          {% macro sortable(key, label) -%}
+            {% if selected.sort == key %}{% set desc = key == 'posted' %}<span aria-sort="{{ 'descending' if desc else 'ascending' }}">{{ label }} {{ '&darr;'|safe if desc else '&uarr;'|safe }}</span>
+            {% else %}<a href="{{ sort_url(key) }}">{{ label }}</a>{% endif %}
+          {%- endmacro %}
+          <th>{{ sortable("title", "Title") }}</th>
+          <th>{{ sortable("company", "Company") }}</th>
+          <th>{{ sortable("posted", "Posted") }}</th>
+          <th>Location</th>
+          <th>Status</th>
+          <th><span class="visually-hidden">Actions</span></th>
+        </tr></thead>
         <tbody>
         {% for job in jobs %}
-          <tr>
-            <td><a href="{{ url_for('web.job', job_id=job.id) }}">{{ job.title }}</a></td>
+          <tr class="{% if job.opened_at is none %}unread{% endif %}">
+            <td>
+              <a href="{{ url_for('web.job', job_id=job.id) }}">{{ job.title }}</a>
+              {% if job.id in new_ids %}<span class="badge">New</span>{% endif %}
+            </td>
             <td>{{ job.company }}</td>
+            <td title="{{ job.posted.strftime('%d %b %Y') }}">{{ job.posted|posted }}</td>
+            <td>{{ job.location }}</td>
             <td>
               <form method="post" action="{{ url_for('web.update_status', job_id=job.id) }}">
                 <input type="hidden" name="next" value="{{ here }}">
@@ -69,15 +101,32 @@
                 <noscript><button type="submit">Save</button></noscript>
               </form>
             </td>
-            <td>{{ job.location }}</td>
+            <td class="row-actions">
+              {% if job.url|http_url %}
+                <a href="{{ job.url|http_url }}" target="_blank" rel="noopener noreferrer"
+                   title="Open the original posting" aria-label="Open the posting for {{ job.title }}">&#8599;</a>
+              {% endif %}
+              {% if job.status != not_interested %}
+              <form method="post" action="{{ url_for('web.update_status', job_id=job.id) }}">
+                <input type="hidden" name="next" value="{{ here }}">
+                <input type="hidden" name="status" value="{{ not_interested }}">
+                <button type="submit" class="dismiss" title="Not interested"
+                        aria-label="Not interested in {{ job.title }}">&times;</button>
+              </form>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
         </tbody>
       </table>
-    {% elif any_filter %}
-      <p class="muted">No jobs match the current filters.</p>
-    {% else %}
+    {% elif not has_jobs %}
       <p class="muted">No jobs yet. Run <code>make scrape</code>, or <a href="{{ url_for('web.add_job') }}">add one</a>.</p>
+    {% elif not any_filter %}
+      <p class="muted">Nothing to triage: every job has a status. Run <code>make scrape</code>
+        for more, <a href="{{ url_for('web.add_job') }}">add one</a>, or
+        <a href="{{ url_for('web.jobs', f=1) }}">see every job</a>.</p>
+    {% else %}
+      <p class="muted">No jobs match the current filters.</p>
     {% endif %}
   </section>
 </div>

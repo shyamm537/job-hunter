@@ -1,13 +1,20 @@
 """Database schema for Job Hunter AI.
 
-A single table, JobPost, tracks the full lifecycle of a posting from
-discovery through generated application materials.
+JobPost tracks the full lifecycle of a posting from discovery through
+generated application materials. ScrapeRun records when each `make scrape`
+started, which is how the dashboard knows which jobs are new.
 """
 
 from datetime import datetime
 from typing import Optional
 
 from sqlmodel import Field, SQLModel
+
+# Application statuses, in the order the dashboard offers them. Free text in
+# the database (see docs/data-model.md); the dashboard refuses anything else.
+TO_APPLY = "To Apply"
+NOT_INTERESTED = "Not interested"
+STATUSES = (TO_APPLY, "Applied", "Interviewing", "Rejected", NOT_INTERESTED)
 
 
 class JobPost(SQLModel, table=True):
@@ -19,7 +26,7 @@ class JobPost(SQLModel, table=True):
     description: str
     url: str
     date_scraped: datetime = Field(default_factory=datetime.utcnow)
-    status: str = Field(default="To Apply")  # To Apply, Applied, Interviewing, Rejected
+    status: str = Field(default=TO_APPLY)  # one of STATUSES
     generated_cover_letter: Optional[str] = None
     generated_cold_email: Optional[str] = None
     # Contact lookup (see docs/hiring-manager-lookup.md). All nullable; populated
@@ -43,3 +50,14 @@ class JobPost(SQLModel, table=True):
     last_seen_at: Optional[datetime] = None
     # Last time check_links requested this posting's URL.
     last_checked_at: Optional[datetime] = None
+    # When you first opened the job in the dashboard (or changed its status);
+    # None means unread.
+    opened_at: Optional[datetime] = None
+
+
+class ScrapeRun(SQLModel, table=True):
+    """One `make scrape` run. Jobs first stored since the latest run started
+    are "new" in the dashboard."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    started_at: datetime
