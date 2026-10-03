@@ -10,7 +10,7 @@ readable `ConfigError`, not a bare `KeyError`.
 The config separates **what** you're looking for from **where** you look:
 
 - `filters` — the `titles` and `locations` you want, shared across all sources.
-- `sources` — where to look: an Adzuna search, or a Greenhouse / Lever / Ashby / Workable board.
+- `sources` — where to look: an Adzuna search, or a Greenhouse / Lever / Ashby / Workable / Workday board.
 
 ```yaml
 filters:
@@ -30,7 +30,7 @@ This split exists because the source types use the intent differently:
 
 - **Adzuna** is a search engine, so `titles × locations` become search queries —
   two titles and two locations is four searches (per matching country).
-- **An ATS board** (Greenhouse, Lever, Ashby, Workable) returns a company's *whole* list, so the
+- **An ATS board** (Greenhouse, Lever, Ashby, Workable, Workday) returns a company's *whole* list, so the
   same titles/locations filter the postings *after* fetching.
 
 Keeping titles/locations out of the per-source lines is what makes the sources
@@ -137,13 +137,17 @@ https://job-boards.greenhouse.io/stripe    # → greenhouse stripe (newer host)
 https://jobs.lever.co/metabase             # → lever metabase
 https://jobs.ashbyhq.com/ashby             # → ashby ashby
 https://apply.workable.com/squiz           # → workable squiz
+https://cba.wd3.myworkdayjobs.com/en-US/CommBank_Careers   # → workday cba wd3 CommBank_Careers
 ```
 
 The scheme is optional (`boards.greenhouse.io/stripe` works), and a deep link
 to a specific posting still resolves to the org token (the first path segment).
 The one exception is a Workable posting link, `apply.workable.com/j/<code>`,
 whose first segment is `j`, not an account: it is rejected with a message asking
-for the board URL (`apply.workable.com/<account>`).
+for the board URL (`apply.workable.com/<account>`). A Workday URL is the one
+host with three values: the tenant and data centre come from the host
+(`<tenant>.<wdN>.myworkdayjobs.com`) and the site from the path, skipping a
+leading locale such as `en-US`; a URL with no site is rejected.
 An unrecognised host fails with a `ConfigError` listing the supported hosts.
 Detection lives in `source_from_url()` (`src/config.py`).
 
@@ -161,6 +165,7 @@ A bad line fails with a `ConfigError` naming the line number. See
 | `sources[].type: lever` (`company`) | `LeverScraper`, then post-filtered | Implemented. |
 | `sources[].type: ashby` (`org`) | `AshbyScraper`, then post-filtered | Implemented. `org` is the `jobs.ashbyhq.com/<org>` token. |
 | `sources[].type: workable` (`account`) | `WorkableScraper`, then post-filtered | Implemented. `account` is the `apply.workable.com/<account>` token, case-sensitive. |
+| `sources[].type: workday` (`tenant`, `datacenter`, `site`) | `WorkdayScraper`, then post-filtered | Implemented. All three come from the careers URL (`cba`, `wd3`, `CommBank_Careers`); one site per tenant. See [`workday.md`](./workday.md). |
 | `sources_file` | `src/config.py` → `load_sources_file()` | Implemented. Appended to inline `sources`. |
 | `adzuna.app_id` / `adzuna.app_key` | `src/ingestion/planner.py` → `AdzunaScraper` | Implemented. Free from developer.adzuna.com. |
 | `llm.backend` / `llm.model` / `llm.host` | `src/llm/client.py` | Implemented. Only `ollama` valid in the LLM layer; config layer permits extra `llm.*` keys (backend undecided). |

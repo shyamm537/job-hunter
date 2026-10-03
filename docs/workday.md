@@ -1,120 +1,148 @@
-# Workday scraper (design)
+# Workday scraper
 
-> Status: **design only, nothing built.** Workday is the hardest ATS to add and
-> bends several assumptions the Greenhouse/Lever/Ashby scrapers share, so the
-> decisions are settled here first. Sections marked **(proposed)** are intent.
+> Status: **built** (KAN-14), `src/ingestion/workday.py`. The API shape below was
+> checked against live Workday tenants on 2026-10-03 (Commonwealth Bank, Bunnings,
+> Flinders University and NVIDIA). Workday's careers API is **not a published
+> contract**, so it can change without notice; the scraper raises rather than
+> guess when it does.
 
 ## Why Workday matters here
 
 The other ATS scrapers skew remote/global tech, because that's who exposes
-Greenhouse/Lever/Ashby public APIs. Many **local AU/India** data employers
-(banks, consultancies, large enterprises) run **Workday** instead. So Workday is
-the channel most likely to surface the local roles Adzuna + the current ATS boards
-miss. That's the whole reason to take on the extra complexity.
+Greenhouse/Lever/Ashby public APIs. Many **local AU/India** employers (banks,
+universities, retailers, enterprises) run **Workday** instead. So Workday is the
+channel most likely to surface the local roles Adzuna and the other boards miss.
 
-## Why it's not "one file like Lever"
+## Adding a board
 
-Greenhouse/Lever/Ashby each take a **single token** and one **GET**. Workday
-breaks all three of those:
+Paste the careers site's URL into `sources.txt`, or write the three values out.
+All three are read off the careers URL, and none can be guessed from a company
+name, so Workday boards are always added by hand:
 
-1. **Three identifiers, not one token.** A board lives at
-   `https://<tenant>.<dc>.myworkdayjobs.com/<lang>/<site>`, e.g.
-   `acme.wd5.myworkdayjobs.com/en-US/Careers`. You need the **tenant** (`acme`),
-   the **data-center subdomain** (`wd1`/`wd3`/`wd5`/`wd103`/…), and the **site**
-   name (`Careers`). The data-center isn't guessable from the company name — you
-   have to read it off a real careers URL.
-2. **The jobs endpoint is a POST with a JSON body**, not a GET:
-
-   ```
-   POST https://<tenant>.<dc>.myworkdayjobs.com/wday/cxs/<tenant>/<site>/jobs
-   body: {"appliedFacets":{}, "limit":20, "offset":0, "searchText":""}
-   ```
-
-   `src/ingestion/http_util.py`'s `get_json()` only does GET, so this needs a
-   `post_json()` sibling (or the scraper uses `requests` directly).
-3. **Pagination.** The response carries `total` and up to ~20 `jobPostings` per
-   call (`title`, `externalPath`, `locationsText`, `postedOn`, `bulletFields`).
-   A full board is many POSTs (`offset += 20` until `offset >= total`).
-4. **Descriptions are an N+1.** The list response has no full description; each
-   posting needs a second GET to
-   `…/wday/cxs/<tenant>/<site>/job/<externalPath>` to fill `JobPost.description`.
-   A 200-job board is ~10 list POSTs + 200 detail GETs.
-
-So Workday is a **multi-call, paginated, POST-based** scraper — fundamentally
-chattier than the one-shot boards. The `BaseScraper` contract still holds (it
-returns `List[JobPost]`), but the politeness story matters far more here.
-
-## Verification gap (read this before trusting the design)
-
-I could live-verify Greenhouse/Lever because they're GET endpoints. Workday is
-**POST**, and its careers pages are JS-rendered, so the API shape above is the
-**known public pattern, not something confirmed against a live tenant from this
-environment.** Field names (`jobPostings`, `externalPath`, `locationsText`) and
-the exact body schema must be checked against one real Workday board before the
-scraper is trusted. That check needs a machine that can POST to the endpoint —
-i.e. yours, not the build sandbox.
-
-## Proposed shape
-
-### Config (`src/config.py`)
-
-A `WorkdaySource` with three fields — the union stops being "type + one token":
-
-```python
-class WorkdaySource(BaseModel):
-    type: Literal["workday"]
-    tenant: str        # acme
-    datacenter: str    # wd5
-    site: str          # Careers
+```
+https://cba.wd3.myworkdayjobs.com/en-US/CommBank_Careers     # pasted URL
+workday cba wd3 CommBank_Careers                              # the same board, spelled out
 ```
 
-`source_from_url()` needs a Workday branch: parse host
-`<tenant>.<dc>.myworkdayjobs.com` (split tenant + dc off the host) and take the
-**site** from the path, skipping the `en-US`-style language segment. This is more
-involved than the current "first path segment is the token" rule. `source_to_line`
-gains a `workday <tenant> <dc> <site>` form.
+`cba` is the **tenant**, `wd3` the **data centre** (`wd1`, `wd3`, `wd5`, `wd103`,
+...), `CommBank_Careers` the **site**, whose case is kept as given. A leading
+locale segment (`en-US`) and any deeper posting path are ignored. Then run
+`make validate`: a wrong site is a 404 and an unknown tenant or data centre a 422,
+and `validate` reports both as dead.
 
-### Scraper (`src/ingestion/workday.py`)
+Before adding a tenant, open `https://<tenant>.<dc>.myworkdayjobs.com/robots.txt`
+and check it has no rule against `/wday/`. The four tenants checked on 2026-10-03
+allowed it (they only disallowed `/refreshFacet/` and a few private sites).
 
-`WorkdayScraper(tenant, datacenter, site)` implementing `scrape()`:
-1. POST the jobs endpoint, paginating on `offset`/`total`.
-2. For each posting, GET the detail endpoint for the description (or, v1, skip
-   descriptions and store the list fields only — see open questions).
-3. Map to `JobPost` with `workday-<sha1(url)[:10]>` ids, like the others.
+### Limits
 
-### http_util
+- **One site per tenant.** A board is identified by its tenant (the stored
+  `company`), so two sites on one tenant would be reconciled as one board and each
+  scrape would mark the other's postings "gone from board". `plan_scrapes()`
+  refuses such a config with an error naming both sites. This is a real limit:
+  Commonwealth Bank runs four sites (`CommBank_Careers`, `Bankwest_Careers`, ...),
+  Bunnings three, and Flinders two (its employment site and a casual register).
+  Add the one you want.
+- **Boards of 2,000 or more postings cannot be read.** Workday caps the reported
+  `total` at 2000 and answers any `offset` of 2000 or more with the first page
+  again, so a larger list can never be complete. The scraper raises for such a
+  board (NVIDIA is one) instead of returning a list that merely looks complete,
+  which would mark every posting beyond it dead. Boards seen: Bunnings 251, CBA
+  167, Flinders 38.
+- **Other host form.** Some tenants use `<dc>.myworkdaysite.com/recruiting/...`
+  instead of `myworkdayjobs.com`. That form is not supported (the URL parser
+  rejects it); none of the four tenants checked used it.
 
-Add `post_json(url, body, …)` mirroring `get_json()`'s retry/backoff/polite-UA,
-so Workday's POSTs get the same transient-failure handling. Same 4xx-is-fatal
-rule (a 404 = dead tenant/site).
+### Place names and your location filter
 
-### Planner
+Workday boards name places their own way (`Sydney CBD Area`, `SA Western Area`,
+`Support Office SA`, `Bedford Park / Kaurna Country`), and none of 456 postings
+captured on 2026-10-03 said "Adelaide". A city-name `filters.locations` therefore
+drops most of a board. Put each board's place names in `filters.board_locations`
+(see [`configuration.md`](./configuration.md)): it applies to boards only, matches
+whole words, and does not add Adzuna searches.
 
-One `elif source.type == "workday"` branch, `post_filter=True` like the other
-ATS boards. Nothing in `base_scraper.py` or `cli.py` changes.
+## How it works
 
-## Open questions to resolve before building
+### The calls
 
-- **Descriptions: N+1 or skip?** Fetching every description doubles+ the request
-  count and slows scrapes a lot. v1 option: store the list-level fields and a URL,
-  fetch the description lazily only for jobs that pass the filter. (Filtering is
-  on title/location, which the list response *has* — so we can filter *before*
-  paying for descriptions. That's the efficient ordering.)
-- **Rate limiting.** This is the first scraper that genuinely needs a throttle
-  ([`docs/scrapers.md`](./scrapers.md) notes none exists yet). A per-request delay + the existing
-  backoff is the minimum; Workday tenants can be touchy about burst traffic.
-- **Data-center discovery.** Since `wd5` isn't derivable from the company name,
-  Workday boards can only be added from a **pasted careers URL**, never from a
-  bare name. This directly limits how much of the discovery automation
-  ([`docs/board-discovery.md`](./board-discovery.md)) can reach Workday — name→token guessing can't work
-  for it. Worth stating plainly: Workday boards are a manual-add path.
-- **Field-shape verification** (above) — a one-board spike on your machine is the
-  first concrete step, before any of this is written.
+```
+list    POST https://<tenant>.<dc>.myworkdayjobs.com/wday/cxs/<tenant>/<site>/jobs
+        body {"appliedFacets": {}, "limit": 20, "offset": N, "searchText": ""}
+detail  GET  https://<tenant>.<dc>.myworkdayjobs.com/wday/cxs/<tenant>/<site><externalPath>
+```
 
-## Not building yet
+Both need only `Content-Type`/`Accept: application/json` and the project
+User-Agent: no key, cookie, CSRF token or `Referer`. `src/ingestion/http_util.py`'s
+`post_json()` and `get_json()` give them retries on timeouts and 5xx and treat a
+4xx as fatal. The scraper sleeps `REQUEST_DELAY` (0.5 s) between requests.
 
-Design only. The first move, if greenlit, is the verification spike: POST one
-real Workday board's jobs endpoint, confirm the field names and body schema, and
-measure how slow a full paginated + descriptions scrape actually is. If it's
-acceptably fast and the schema matches, the scraper is a known quantity; if not,
-the design above changes.
+### Reading the list
+
+- **20 per page.** `limit` above 20 is an HTTP 400, so `PAGE_SIZE` stays at 20.
+- **`total` is on the first page only**; later pages report 0, so it is read once.
+- **A complete list or an error.** The scraper counts unique postings (by
+  `externalPath`, so a posting seen twice counts once) and raises if it ends with
+  fewer than `total`, if the board is at the 2,000 ceiling, or if a posting has no
+  path. `scrape()` must return the whole board, because the scrape CLI treats
+  anything missing as gone and marks it dead.
+- **`postedOn` is ignored**: it is display text ("Posted Today"), not a date, and
+  some tenants omit it.
+
+### Descriptions: only for title matches
+
+The list has no description, and one detail call per posting would be hundreds of
+requests (a 200-posting board is ~10 list calls plus 200 detail calls). The
+planner therefore gives the scraper `filters.titles` as `detail_titles`, and the
+detail is fetched only for postings whose title matches one. Every other posting
+is still returned, with an empty description, so the board reconciles correctly.
+With **no** title filters set, no details are fetched at all (it would otherwise
+mean every posting on the board).
+
+From the detail call the scraper takes the HTML description (converted to text by
+`html_to_text()`), the clean location plus `additionalLocations` (so a posting the
+list shows as "2 Locations" gets its real places), and `startDate`, which is the
+posting date to within a day. A failed detail call is logged and leaves the list
+values: one bad posting never fails the scrape. A posting stored with an empty
+description is filled in by a later scrape (`upsert_job`).
+
+Known cost: the scraper cannot see the database, so it repeats the detail call for
+every title match on every scrape, including postings already stored. The count is
+bounded by the number of title matches (8 on Commonwealth Bank's 167 postings).
+
+### The stored fields
+
+| `JobPost` field | From |
+|---|---|
+| `company` | the tenant (the board token) |
+| `url` | `https://<tenant>.<dc>.myworkdayjobs.com/<site><externalPath>`, no locale segment |
+| `location` | the detail's `location` and `additionalLocations`, joined with `"; "`; without a detail, `locationsText` cut at the first `\|` (some tenants pack the job level and closing date after it) |
+| `posted_at` | the detail's `startDate`; `None` without a detail |
+| `description` | the detail's `jobDescription` as text; empty without a detail |
+
+### The id
+
+`job_board_id` is `workday-<sha1(<tenant>/<site>/<requisition id>)[:10]>`, **not**
+a hash of the URL. The URL's path holds location and title slugs that can change
+while the posting stays open, and an id that followed them would re-insert the
+posting as new and lose its status and generated materials.
+
+Every `externalPath` ends in `_<requisition id>`, sometimes with a `-N` repost
+marker (`..._JR0000017701-1`; 122 of Bunnings' 251 postings have one). One of the
+posting's `bulletFields` is the base id (`JR0000017701`; its position varies by
+tenant), so the scraper looks for a bullet that equals the suffix or the suffix
+minus `-N` and uses it. If none matches it uses the whole suffix unchanged. It never
+removes a trailing `-N` by pattern: an id written `R-12345` would become `R`, and
+every posting on the board would share one id. If two postings still map to the
+same id the scrape raises, so fix the rule rather than skipping the board.
+
+**Not yet verified:** that the `-N` value, or the path slugs, actually change when
+a posting is edited or refreshed; that needs a second look at the same boards after
+some days. Back-to-back scrapes were checked (456 postings, then 0 new and 0 gone).
+
+## Not covered
+
+- **`make discover`** does not look for Workday boards: the tenant, data centre and
+  site cannot be derived from a company name.
+- The facets in the list response (company, job family, time type, country and
+  region) are ignored; filtering is done after fetching, like every other board.
