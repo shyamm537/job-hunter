@@ -5,6 +5,7 @@ from src.config import (
     Filters,
     GreenhouseSource,
     LeverSource,
+    WorkableSource,
     source_to_line,
 )
 from src.ingestion import validate as V
@@ -54,6 +55,21 @@ def test_dead_board_is_caught_not_raised():
     assert "404" in r.error
 
 
+def test_workable_board_validates_and_a_dead_account_is_reported_dead():
+    jobs = _jobs(("Senior Data Analyst", "Remote"), ("Chef", "Paris"))
+    with patch("src.ingestion.workable.WorkableScraper.scrape", return_value=jobs):
+        r = V.validate_source(WorkableSource(type="workable", account="acme"), F)
+    assert r.label == "workable[acme]" and r.status == "match" and r.matched == 1
+
+    # An unknown Workable account is a 404, which get_json raises.
+    with patch(
+        "src.ingestion.workable.WorkableScraper.scrape",
+        side_effect=RuntimeError("404 Client Error: Not Found"),
+    ):
+        r = V.validate_source(WorkableSource(type="workable", account="gone"), F)
+    assert r.live is False and r.status == "dead" and "404" in r.error
+
+
 def test_kept_filters_to_live_then_to_matching():
     live_match = V.ValidationResult(
         GreenhouseSource(type="greenhouse", board="a"), "a", True, 5, 2, None)
@@ -78,3 +94,4 @@ def test_source_to_line_roundtrips():
     assert source_to_line(AdzunaSource(type="adzuna", country="in")) == "adzuna in"
     assert source_to_line(GreenhouseSource(type="greenhouse", board="stripe")) == "greenhouse stripe"
     assert source_to_line(LeverSource(type="lever", company="metabase")) == "lever metabase"
+    assert source_to_line(WorkableSource(type="workable", account="Squiz")) == "workable Squiz"

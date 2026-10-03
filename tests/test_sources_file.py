@@ -9,6 +9,7 @@ from src.config import (
     ConfigError,
     GreenhouseSource,
     LeverSource,
+    WorkableSource,
     load_sources_file,
     source_from_url,
 )
@@ -124,6 +125,79 @@ def test_source_from_url_ashby(url, org):
     src = source_from_url(url)
     assert isinstance(src, AshbySource)
     assert src.org == org
+
+
+def test_workable_line_parses(tmp_path):
+    path = _write(tmp_path, "workable squiz\n")
+    src = load_sources_file(path)[0]
+    assert isinstance(src, WorkableSource) and src.account == "squiz"
+
+
+def test_workable_keeps_the_account_case_as_typed(tmp_path):
+    # Workable account slugs are case-sensitive (SQUIZ is a 404).
+    src = load_sources_file(_write(tmp_path, "workable Squiz-Co\n"))[0]
+    assert src.account == "Squiz-Co"
+
+
+def test_workable_missing_token_raises(tmp_path):
+    path = _write(tmp_path, "workable\n")
+    with pytest.raises(ConfigError) as exc:
+        load_sources_file(path)
+    assert "exactly one account token" in str(exc.value)
+
+
+def test_workable_extra_token_raises(tmp_path):
+    path = _write(tmp_path, "workable squiz extra\n")
+    with pytest.raises(ConfigError):
+        load_sources_file(path)
+
+
+@pytest.mark.parametrize(
+    "url, account",
+    [
+        ("https://apply.workable.com/squiz", "squiz"),
+        ("apply.workable.com/squiz", "squiz"),  # scheme optional
+        ("https://apply.workable.com/squiz/", "squiz"),  # trailing slash
+        ("https://apply.workable.com/squiz/j/EB6B3555A0", "squiz"),  # deep link with account
+        ("HTTPS://APPLY.WORKABLE.COM/Squiz", "Squiz"),  # host case-insensitive, slug kept
+    ],
+)
+def test_source_from_url_workable(url, account):
+    src = source_from_url(url)
+    assert isinstance(src, WorkableSource)
+    assert src.account == account
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://apply.workable.com/j/EB6B3555A0",  # a single posting: "j" is not an account
+        "apply.workable.com/j/EB6B3555A0/apply",
+        "https://apply.workable.com/J/EB6B3555A0",
+    ],
+)
+def test_source_from_url_workable_posting_link_asks_for_the_board(url):
+    with pytest.raises(ConfigError) as exc:
+        source_from_url(url)
+    assert "single Workable posting" in str(exc.value)
+    assert "https://apply.workable.com/<account>" in str(exc.value)
+
+
+def test_source_from_url_workable_missing_token_raises():
+    with pytest.raises(ConfigError) as exc:
+        source_from_url("https://apply.workable.com/")
+    assert "could not find a board token" in str(exc.value)
+
+
+def test_sources_file_accepts_a_workable_url(tmp_path):
+    srcs = load_sources_file(_write(tmp_path, "https://apply.workable.com/legalvision\n"))
+    assert isinstance(srcs[0], WorkableSource) and srcs[0].account == "legalvision"
+
+
+def test_unknown_type_error_lists_workable(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_sources_file(_write(tmp_path, "linkedin acme\n"))
+    assert "workable" in str(exc.value)
 
 
 def test_source_from_url_unknown_host_raises():
