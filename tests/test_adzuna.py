@@ -165,8 +165,11 @@ def test_scrape_uses_id_when_present():
 def test_adzuna_id_from_url_extracts_path_id():
     assert adzuna_id_from_url("https://www.adzuna.in/land/ad/123456?se=X") == "123456"
     assert adzuna_id_from_url("http://adzuna.co.uk/jobs/land/ad/789") == "789"
-    # No land/ad segment -> None (caller leaves such a row untouched).
+    # The /details/<id> shape most stored rows use.
+    assert adzuna_id_from_url("https://www.adzuna.com.au/details/5512345678?utm_medium=api") == "5512345678"
+    # No land/ad or details segment, or a non-numeric id -> None (row left alone).
     assert adzuna_id_from_url("https://example.com/jobs/789") is None
+    assert adzuna_id_from_url("https://www.adzuna.in/details/abc") is None
     assert adzuna_id_from_url("") is None
 
 

@@ -79,9 +79,9 @@ def url_dedup_key(redirect_url: str) -> str:
     scheme+host+path only, dropping query and fragment, so those duplicates
     collapse to one job_board_id. The full URL is still stored on the JobPost.
 
-    This is also the *legacy* key scheme: rows scraped before the switch to
-    `id` are keyed this way, which is how the one-time re-key migration
-    (src/storage/database.py) recognizes them.
+    Only a fallback now. (Rows scraped before the switch to `id` were keyed by
+    a hash of the FULL URL, query included; src/storage/adzuna_rekey.py
+    re-keys those from the ad id in the stored URL.)
     """
     parts = urlsplit(redirect_url)
     canonical = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
@@ -89,14 +89,23 @@ def url_dedup_key(redirect_url: str) -> str:
 
 
 def adzuna_id_from_url(redirect_url: str) -> Optional[str]:
-    """Extract Adzuna's ad id from a redirect URL path (`.../land/ad/<id>`).
+    """Extract Adzuna's ad id from a redirect URL path.
 
-    Returns None if the path doesn't carry one. Only used by the legacy->id
-    dedup-key migration, which has the stored URL but not the original `id`.
+    Adzuna uses two shapes, `.../details/<id>` and `.../land/ad/<id>`; the
+    number is the same as the API's `id`. Returns None if the path carries
+    neither. Used by the legacy->id re-key (src/storage/adzuna_rekey.py),
+    which has the stored URL but not the original `id`.
     """
     parts = [p for p in urlsplit(redirect_url).path.split("/") if p]
-    for i in range(len(parts) - 2):
-        if parts[i] == "land" and parts[i + 1] == "ad":
+    for i, part in enumerate(parts):
+        if part == "details" and i + 1 < len(parts) and parts[i + 1].isdigit():
+            return parts[i + 1]
+        if (
+            part == "land"
+            and i + 2 < len(parts)
+            and parts[i + 1] == "ad"
+            and parts[i + 2].isdigit()
+        ):
             return parts[i + 2]
     return None
 
