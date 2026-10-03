@@ -41,6 +41,27 @@ def test_board_plans_carry_source_and_token():
     ]
 
 
+def test_adzuna_searches_use_locations_never_board_locations():
+    # board_locations is for board post-filtering only; it must not add searches.
+    both = plan_scrapes(
+        [AdzunaSource(type="adzuna", country="au")],
+        Filters(
+            titles=["data analyst"],
+            locations=["Adelaide"],
+            board_locations=["Adelaide", "SA", "Bedford Park"],
+        ),
+        adzuna_auth=("id", "key"),
+    )
+    only = plan_scrapes(
+        [AdzunaSource(type="adzuna", country="au")],
+        Filters(titles=["data analyst"], locations=["Adelaide"]),
+        adzuna_auth=("id", "key"),
+    )
+    assert [p.label for p in both] == [p.label for p in only]
+    assert len(both) == 1
+    assert "Bedford Park" not in both[0].label
+
+
 def test_adzuna_plans_have_no_board():
     plans = plan_scrapes(
         [AdzunaSource(type="adzuna", country="au")],

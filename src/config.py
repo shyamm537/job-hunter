@@ -48,10 +48,18 @@ class Filters(BaseModel):
     For Adzuna, titles x locations become search queries. For ATS boards,
     they filter the fetched postings (see src/ingestion/filtering.py). Empty
     lists mean "no filter" — every posting passes.
+
+    `board_locations` is an optional second location list used ONLY for board
+    postings, never for Adzuna queries. Boards use their own place names ("SA
+    Western Area", "Bedford Park / Kaurna Country"), and adding those to
+    `locations` would add Adzuna searches. When set it REPLACES `locations` for
+    boards (so repeat the cities in it) and its entries match as whole words;
+    when empty, boards use `locations` as before.
     """
 
     titles: List[str] = Field(default_factory=list)
     locations: List[str] = Field(default_factory=list)
+    board_locations: List[str] = Field(default_factory=list)
 
 
 class GreenhouseSource(BaseModel):
