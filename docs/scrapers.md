@@ -92,7 +92,9 @@ It returns `PlannedScrape(scraper, label, post_filter)` items. `cli.py` runs eac
 applies the filter to ATS results, and upserts. A planned scrape that throws is
 logged and skipped — it doesn't abort the run. Location filtering is lenient: a
 posting whose location mentions "remote" always passes (see
-`docs/configuration.md`).
+`docs/configuration.md`). Board postings are matched against the optional
+`filters.board_locations` (whole words) when it is set, otherwise against
+`filters.locations`; Adzuna queries only ever use `filters.locations`.
 
 ## Sources from a text file
 

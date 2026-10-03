@@ -10,6 +10,13 @@
 filters:
   titles:    ["data analyst", "data scientist"]
   locations: ["Adelaide", "Sydney"]
+  # Optional. Boards (Greenhouse/Lever/Ashby) often use their own place names,
+  # e.g. "SA Western Area" or "Bedford Park / Kaurna Country". Listing those in
+  # `locations` would add Adzuna searches, so put them here instead. When set,
+  # this list REPLACES `locations` for boards only (repeat your cities in it) and
+  # Adzuna ignores it. Entries match whole words, so "SA" matches "SA Western
+  # Area" but not "San Francisco". Leave it out to use `locations` for boards.
+  # board_locations: ["Adelaide", "SA", "Bedford Park", "Sydney"]
 
 # ── Where to look ───────────────────────────────────────────────────────────
 # Sources are just "where". ATS boards (greenhouse/lever/ashby) are global —

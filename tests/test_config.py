@@ -133,6 +133,24 @@ def test_llm_rejects_negative_values(bad):
 def test_empty_filters_default():
     f = Filters()
     assert f.titles == [] and f.locations == []
+    assert f.board_locations == []
+
+
+def test_board_locations_parse_from_yaml(tmp_path):
+    path = _write(
+        tmp_path,
+        """
+        filters:
+          locations: ["Adelaide"]
+          board_locations: ["Adelaide", "SA", "Bedford Park"]
+        sources:
+          - type: greenhouse
+            board: stripe
+        """,
+    )
+    f = load_config(path).resolved_filters
+    assert f.locations == ["Adelaide"]
+    assert f.board_locations == ["Adelaide", "SA", "Bedford Park"]
 
 
 def test_archive_url_defaults_to_unset():

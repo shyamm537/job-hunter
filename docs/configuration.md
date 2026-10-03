@@ -46,6 +46,28 @@ clean and uniform — a source is purely "where".
   drop remote roles. (See `src/ingestion/filtering.py`.)
 - Adzuna is never post-filtered; its search query already did the filtering.
 
+### `filters.board_locations` (optional, boards only)
+
+Boards often name places their own way (`SA Western Area`, `Support Office SA`,
+`Bedford Park / Kaurna Country`), and none says "Adelaide". Adding those names to
+`filters.locations` would also add Adzuna searches (each location × title is a
+search, per matching country). `board_locations` is a second list for boards only:
+
+- When set, it **replaces** `locations` when filtering board postings (it does
+  not add to it, so repeat your cities in it). Adzuna never reads it.
+- Its entries match **as whole words** (case-insensitive, taken literally), so a
+  short code like `SA` matches `SA Western Area` and `Support Office SA` but not
+  `San Francisco`, `USA` or `Mount Pleasant`. `locations` still matches by
+  substring.
+- A `remote` location still always passes.
+- Empty or missing: boards use `locations` exactly as before.
+
+```yaml
+filters:
+  locations:       ["Adelaide", "Sydney"]                       # Adzuna searches
+  board_locations: ["Adelaide", "SA", "Bedford Park", "Sydney"] # board filter
+```
+
 ### Regions: Adzuna searches AU + India, ATS is global
 
 The search source is **Adzuna**. It is
@@ -129,6 +151,7 @@ A bad line fails with a `ConfigError` naming the line number. See
 | Key | Used by | Status |
 |---|---|---|
 | `filters.titles` / `filters.locations` | `src/ingestion/planner.py` (Adzuna queries) + `src/ingestion/filtering.py` (ATS post-filter) | Implemented. Empty = no filter. |
+| `filters.board_locations` | `src/ingestion/filtering.py` (ATS post-filter only) | Implemented. Optional; replaces `locations` for boards, whole-word match. Adzuna ignores it. |
 | `sources[].type: adzuna` (`country`) | expands to `titles × locations` Adzuna searches in that country | Implemented. Needs the top-level `adzuna:` block (`app_id`, `app_key`). |
 | `sources[].type: greenhouse` (`board`) | `GreenhouseScraper`, then post-filtered | Implemented. |
 | `sources[].type: lever` (`company`) | `LeverScraper`, then post-filtered | Implemented. |
