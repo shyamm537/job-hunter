@@ -140,6 +140,20 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _fill_empty_description(row: JobPost, incoming: JobPost) -> bool:
+    """Copy the incoming description onto `row` only if the row has none.
+
+    A stored description is never overwritten, however it differs. Returns
+    whether the row changed.
+    """
+    stored_is_empty = not (row.description or "").strip()
+    incoming_has_text = bool((incoming.description or "").strip())
+    if stored_is_empty and incoming_has_text:
+        row.description = incoming.description
+        return True
+    return False
+
+
 def upsert_job(
     session: Session, job: JobPost, archive_session: Optional[Session] = None
 ) -> tuple[JobPost, bool]:
@@ -160,10 +174,13 @@ def upsert_job(
 
     - a row marked dead is revived (dead_at and dead_reason cleared): if a
       scrape returns it again, the link check was wrong or the ad reopened;
-    - posted_at is filled in if the row doesn't have one yet.
+    - posted_at and description are filled in if the row doesn't have one yet
+      (a scraper that fetches descriptions one posting at a time returns "" when
+      that call failed, and the next scrape should be able to repair the row).
 
     Nothing else on an existing row is overwritten — status, generated
-    materials, contact fields and description are the user's/worker's data.
+    materials, contact fields and a description that is already there are the
+    user's/worker's data.
     """
     existing = session.exec(
         select(JobPost).where(JobPost.job_board_id == job.job_board_id)
@@ -175,6 +192,7 @@ def upsert_job(
             existing.dead_reason = None
         if existing.posted_at is None and job.posted_at is not None:
             existing.posted_at = job.posted_at
+        _fill_empty_description(existing, job)
         session.add(existing)
         session.commit()
         # commit() expires the row; reload it so the caller gets a usable
@@ -187,8 +205,12 @@ def upsert_job(
 
         restored = restore_from_archive(session, archive_session, job.job_board_id)
         if restored is not None:
+            changed = False
             if restored.posted_at is None and job.posted_at is not None:
                 restored.posted_at = job.posted_at
+                changed = True
+            changed = _fill_empty_description(restored, job) or changed
+            if changed:
                 session.add(restored)
                 session.commit()
                 session.refresh(restored)

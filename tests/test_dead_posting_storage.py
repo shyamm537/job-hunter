@@ -536,6 +536,26 @@ def test_upsert_backfills_posted_at_only_when_missing(db):
     assert _get(without).posted_at == T2
 
 
+def test_upsert_fills_an_empty_description_only(db):
+    empty, blank, has_text = _add(
+        _job(1, description=""), _job(2, description="  \n"), _job(3, description="Mine.")
+    )
+
+    with get_session() as session:
+        for i in (1, 2, 3):
+            upsert_job(session, _job(i, description="From the scraper."))
+    assert _get(empty).description == "From the scraper."  # was empty: filled in
+    assert _get(blank).description == "From the scraper."  # whitespace counts as empty
+    assert _get(has_text).description == "Mine."  # had text: kept
+
+    # An incoming job with no description never blanks a stored one.
+    with get_session() as session:
+        upsert_job(session, _job(1, description=""))
+        upsert_job(session, _job(2, description="   "))
+    assert _get(empty).description == "From the scraper."
+    assert _get(blank).description == "From the scraper."
+
+
 def test_upsert_existing_row_leaves_everything_else_untouched(db):
     (job_id,) = _add(
         _job(
