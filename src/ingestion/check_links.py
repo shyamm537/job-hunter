@@ -20,7 +20,9 @@ Without --mark-dead the run is a dry run: it logs what it found and writes
 nothing to the database, so the same postings are queued next time. With
 --mark-dead every posting that was attempted gets last_checked_at, and the
 dead ones get dead_at + dead_reason. Results are committed every --batch-size
-postings, so Ctrl-C keeps the progress made so far.
+postings, so Ctrl-C keeps the progress made so far. At the end of a
+--mark-dead run, dead postings are moved to the archive
+(src/storage/archive.py).
 
 Usage:
     python -m src.ingestion.check_links                   # dry run, up to 200 postings
@@ -42,6 +44,7 @@ from curl_cffi import requests
 
 from src.config import ConfigError, load_config
 from src.logging_config import setup_logging
+from src.storage.archive import archive_dead_jobs, configure_archive, get_archive_session
 from src.storage.database import (
     LinkCheckItem,
     count_link_check_queue,
@@ -276,16 +279,26 @@ def main(argv: Optional[List[str]] = None, http=None) -> None:
             batch_size=args.batch_size,
         )
         remaining = count_link_check_queue(session, recheck_days=args.recheck_days)
+        archived = 0
+        if args.mark_dead:
+            try:
+                configure_archive(config.database)
+            except ValueError as exc:
+                print(exc, file=sys.stderr)
+                raise SystemExit(1)
+            with get_archive_session() as archive_session:
+                archived = archive_dead_jobs(session, archive_session)
 
     live = [r for r in results if r.status == "live"]
     dead = [r for r in results if r.status == "dead"]
     unknown = [r for r in results if r.status == "unknown"]
     log.info(
         "Done: checked %d of %d queued: %d live, %d dead, %d unknown. "
-        "Marked %d dead%s. %d still queued.",
+        "Marked %d dead%s. %d still queued.%s",
         len(results), queued, len(live), len(dead), len(unknown), marked,
         "" if args.mark_dead else " (dry run, nothing written; use --mark-dead)",
         remaining,
+        f" Moved {archived} dead posting(s) to the archive." if archived else "",
     )
 
     if args.dead_out and dead:

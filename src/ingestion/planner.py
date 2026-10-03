@@ -37,6 +37,11 @@ class PlannedScrape:
     # Whether to apply the title/location filters to results after scraping.
     # True for ATS boards, False for Adzuna (its query already filtered).
     post_filter: bool
+    # (source, token) for a whole-board scrape (Greenhouse/Lever/Ashby). The
+    # scrape CLI uses it to compare the board's stored rows with what the
+    # board still lists (reconcile_board). None for Adzuna: a search result
+    # isn't a complete list, so a missing posting proves nothing.
+    board: Optional[Tuple[str, str]] = None
 
 
 def plan_adzuna(
@@ -91,6 +96,7 @@ def plan_greenhouse(
             GreenhouseScraper(board=source.board),
             f"greenhouse[{source.board}]",
             post_filter=True,
+            board=("greenhouse", source.board),
         )
     ]
 
@@ -106,6 +112,7 @@ def plan_lever(
             LeverScraper(company=source.company),
             f"lever[{source.company}]",
             post_filter=True,
+            board=("lever", source.company),
         )
     ]
 
@@ -121,6 +128,7 @@ def plan_ashby(
             AshbyScraper(org=source.org),
             f"ashby[{source.org}]",
             post_filter=True,
+            board=("ashby", source.org),
         )
     ]
 

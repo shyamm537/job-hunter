@@ -163,6 +163,10 @@ class DatabaseConfig(BaseModel):
     """
 
     url: str = DEFAULT_DATABASE_URL
+    # Where dead postings are moved to (see src/storage/archive.py). Unset
+    # means `dead_jobs.db` next to the main SQLite file, so the default setup
+    # gets data/dead_jobs.db. Same SQLite-only caveat as `url`.
+    archive_url: Optional[str] = None
 
 
 class Config(BaseModel):
