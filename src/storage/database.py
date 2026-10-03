@@ -32,7 +32,7 @@ from sqlalchemy import case, func, or_, text, update
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from src.config import DEFAULT_DATABASE_URL
-from src.storage.models import JobPost
+from src.storage.models import NOT_INTERESTED, JobPost, ScrapeRun
 
 ENV_VAR = "JOBHUNTER_DATABASE_URL"
 
@@ -109,6 +109,7 @@ _ADDED_COLUMNS = {
     "posted_at": "DATETIME",
     "last_seen_at": "DATETIME",
     "last_checked_at": "DATETIME",
+    "opened_at": "DATETIME",
 }
 
 
@@ -465,11 +466,11 @@ def pending_llm_jobs(session: Session, limit: int | None = None) -> List[JobPost
 
     Order: jobs you added by hand come first (oldest first), so the next
     `make process` run does yours before the scraped backlog; then the rest
-    in insertion order, as before.
+    in insertion order, as before. Jobs marked "Not interested" are skipped.
     """
     statement = (
         select(JobPost)
-        .where(JobPost.generated_cover_letter.is_(None))
+        .where(JobPost.generated_cover_letter.is_(None), JobPost.status != NOT_INTERESTED)
         .order_by(
             case((JobPost.job_board_id.like(f"{MANUAL_SOURCE}-%"), 0), else_=1),
             JobPost.id.asc(),
@@ -486,13 +487,11 @@ def count_pending_llm_jobs(session: Session) -> int:
     Lets the worker report how many remain after a bounded run so a partial
     pass isn't mistaken for an empty queue.
     """
-    return len(
-        list(
-            session.exec(
-                select(JobPost).where(JobPost.generated_cover_letter.is_(None))
-            ).all()
-        )
-    )
+    return session.exec(
+        select(func.count())
+        .select_from(JobPost)
+        .where(JobPost.generated_cover_letter.is_(None), JobPost.status != NOT_INTERESTED)
+    ).one()
 
 
 def pending_contact_jobs(session: Session) -> List[JobPost]:
@@ -501,11 +500,14 @@ def pending_contact_jobs(session: Session) -> List[JobPost]:
     The queue for `make contacts`, mirroring pending_llm_jobs(): NULL
     contact_confidence means "not looked up". The lookup always sets a
     confidence (including "none" on a miss), so a processed row leaves the
-    queue and isn't retried on every run.
+    queue and isn't retried on every run. Jobs marked "Not interested" are
+    skipped, as they are by pending_llm_jobs().
     """
     return list(
         session.exec(
-            select(JobPost).where(JobPost.contact_confidence.is_(None))
+            select(JobPost).where(
+                JobPost.contact_confidence.is_(None), JobPost.status != NOT_INTERESTED
+            )
         ).all()
     )
 
@@ -533,6 +535,20 @@ class JobSummary(NamedTuple):
     status: str
     location: str
     source: str  # derived from the job_board_id prefix
+    posted: datetime  # posted_at, or date_scraped when the source doesn't say
+    date_scraped: datetime
+    url: str
+    opened_at: Optional[datetime]
+
+
+# Sort orders the list view offers. "posted" (the default) is newest first by
+# the posted date, falling back to the scrape date when a source gives none.
+_POSTED = func.coalesce(JobPost.posted_at, JobPost.date_scraped)
+SORTS = {
+    "posted": (_POSTED.desc(), JobPost.id.desc()),
+    "title": (func.lower(JobPost.title).asc(), _POSTED.desc()),
+    "company": (func.lower(JobPost.company).asc(), _POSTED.desc()),
+}
 
 
 def _source_of(job_board_id: str) -> str:
@@ -547,12 +563,14 @@ def list_job_summaries(
     statuses: Optional[Sequence[str]] = None,
     locations: Optional[Sequence[str]] = None,
     title_query: Optional[str] = None,
+    sort: str = "posted",
 ) -> List[JobSummary]:
     """Lightweight, filtered rows for the dashboard list.
 
-    Selects only id/title/company/status/location/job_board_id — never the
-    heavy text columns — and pushes every filter into SQL so the database
-    returns just the matching rows. An empty/None filter means "no filter".
+    Selects only the columns the list shows — never the heavy text columns —
+    and pushes every filter into SQL so the database returns just the
+    matching rows. An empty/None filter means "no filter". `sort` is a key of
+    SORTS; an unknown one falls back to "posted".
     """
     stmt = select(
         JobPost.id,
@@ -561,6 +579,10 @@ def list_job_summaries(
         JobPost.status,
         JobPost.location,
         JobPost.job_board_id,
+        _POSTED,
+        JobPost.date_scraped,
+        JobPost.url,
+        JobPost.opened_at,
     )
     if sources:
         stmt = stmt.where(or_(*[JobPost.job_board_id.like(f"{s}-%") for s in sources]))
@@ -572,7 +594,7 @@ def list_job_summaries(
         stmt = stmt.where(JobPost.location.in_(list(locations)))
     if title_query and title_query.strip():
         stmt = stmt.where(JobPost.title.ilike(f"%{title_query.strip()}%"))
-    stmt = stmt.order_by(JobPost.date_scraped.desc())
+    stmt = stmt.order_by(*SORTS.get(sort, SORTS["posted"]))
 
     return [
         JobSummary(
@@ -582,9 +604,44 @@ def list_job_summaries(
             status=row[3],
             location=row[4],
             source=_source_of(row[5]),
+            posted=_as_datetime(row[6]),
+            date_scraped=row[7],
+            url=row[8],
+            opened_at=row[9],
         )
         for row in session.exec(stmt).all()
     ]
+
+
+def _as_datetime(value) -> datetime:
+    """COALESCE loses SQLite's column type, so the posted date can come back
+    as a string; turn it back into a datetime."""
+    return datetime.fromisoformat(value) if isinstance(value, str) else value
+
+
+def mark_opened(
+    session: Session, job_ids: Sequence[int], *, when: Optional[datetime] = None
+) -> int:
+    """Mark jobs as read (opened_at), leaving already-read ones alone.
+    Does not commit; returns rows changed."""
+    if not job_ids:
+        return 0
+    return _update_jobs(
+        session, job_ids, {"opened_at": when or utcnow()}, JobPost.opened_at.is_(None)
+    )
+
+
+def record_scrape_run(session: Session, *, when: Optional[datetime] = None) -> datetime:
+    """Note that a `make scrape` run is starting, and commit. Returns its start."""
+    started = when or utcnow()
+    session.add(ScrapeRun(started_at=started))
+    session.commit()
+    return started
+
+
+def latest_scrape_start(session: Session) -> Optional[datetime]:
+    """When the most recent `make scrape` run started, or None if none is recorded."""
+    return session.exec(select(func.max(ScrapeRun.started_at))).one()
 
 
 def distinct_locations(session: Session) -> List[str]:

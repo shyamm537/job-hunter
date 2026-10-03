@@ -5,6 +5,11 @@ The list never loads the heavy text columns (description, cover letter, cold
 email); list_job_summaries selects only what the table shows, with every
 filter applied in SQL. A job's page is the one place a full row is loaded.
 
+Triage (KAN-34): with no filters the list is the "To Apply" queue, newest
+posted first. A job is unread until you open it or change its status, and
+"new" if the latest `make scrape` run first stored it. "Not interested"
+dismisses a job in one click.
+
 Local-only guards (see check_request): the app answers only to localhost
 Host headers, which blocks DNS-rebinding, and refuses a POST that comes from
 another origin, so a web page you visit can't submit forms to it.
@@ -12,8 +17,10 @@ another origin, so a web page you visit can't submit forms to it.
 
 import html
 import re
+from datetime import datetime
 from html.parser import HTMLParser
-from urllib.parse import urlsplit
+from typing import Optional
+from urllib.parse import parse_qs, urlsplit
 
 from flask import (
     Blueprint,
@@ -27,17 +34,21 @@ from flask import (
 )
 
 from src.storage.database import (
+    MANUAL_SOURCE,
+    SORTS,
     add_manual_job,
     distinct_companies,
     distinct_locations,
     get_job,
     get_session,
+    latest_scrape_start,
     list_job_summaries,
+    mark_opened,
     present_sources,
     set_job_status,
+    utcnow,
 )
-
-STATUSES = ["To Apply", "Applied", "Interviewing", "Rejected"]
+from src.storage.models import NOT_INTERESTED, STATUSES, TO_APPLY
 
 bp = Blueprint("web", __name__)
 
@@ -120,44 +131,130 @@ def plain_text(value: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
+def _filters(args) -> dict:
+    """The list's filters and sort from query args (a MultiDict or a
+    parse_qs dict). With no status chosen and no filter form submitted, the
+    list is the triage queue: "To Apply" only. The filter form always sends
+    f=1, so unticking every status there shows every status."""
+    def many(name):
+        return list(args.getlist(name)) if hasattr(args, "getlist") else list(args.get(name, []))
+
+    def one(name):
+        values = many(name)
+        return values[0].strip() if values else ""
+
+    statuses = many("status")
+    if not statuses and not one("f"):
+        statuses = [TO_APPLY]
+    sort = one("sort")
+    return {
+        "sources": many("source"),
+        "statuses": statuses,
+        "company": one("company"),
+        "location": one("location"),
+        "q": one("q"),
+        "sort": sort if sort in SORTS else "posted",
+    }
+
+
+def _summaries(session, selected: dict):
+    return list_job_summaries(
+        session,
+        sources=selected["sources"],
+        statuses=selected["statuses"],
+        companies=[selected["company"]] if selected["company"] else None,
+        locations=[selected["location"]] if selected["location"] else None,
+        title_query=selected["q"],
+        sort=selected["sort"],
+    )
+
+
+def _is_new(job, new_since: Optional[datetime]) -> bool:
+    """First stored by the latest scrape run (jobs you added yourself don't count)."""
+    return (
+        new_since is not None
+        and job.date_scraped >= new_since
+        and job.source != MANUAL_SOURCE
+    )
+
+
+def _sort_url(sort: str) -> str:
+    """This list with a different sort, every other filter kept."""
+    args = request.args.to_dict(flat=False)
+    args["sort"] = [sort]
+    return url_for("web.jobs", **args)
+
+
+@bp.app_template_filter("posted")
+def posted(value: Optional[datetime]) -> str:
+    """Short age for the list: "today", "3d", "5w", "4mo"."""
+    if value is None:
+        return ""
+    days = (utcnow() - value).days
+    if days < 1:
+        return "today"
+    if days < 14:
+        return f"{days}d"
+    if days < 60:
+        return f"{days // 7}w"
+    return f"{days // 30}mo"
+
+
 @bp.get("/")
 def jobs():
-    selected = {
-        "sources": request.args.getlist("source"),
-        "statuses": request.args.getlist("status"),
-        "company": request.args.get("company", ""),
-        "location": request.args.get("location", ""),
-        "q": request.args.get("q", "").strip(),
-    }
+    selected = _filters(request.args)
     with get_session() as session:
         options = {
             "sources": present_sources(session),
             "companies": distinct_companies(session),
             "locations": distinct_locations(session),
         }
-        summaries = list_job_summaries(
-            session,
-            sources=selected["sources"],
-            statuses=selected["statuses"],
-            companies=[selected["company"]] if selected["company"] else None,
-            locations=[selected["location"]] if selected["location"] else None,
-            title_query=selected["q"],
-        )
+        summaries = _summaries(session, selected)
+        new_since = latest_scrape_start(session)
+    new_ids = {job.id for job in summaries if _is_new(job, new_since)}
+    any_filter = bool(
+        request.args.get("f") or request.args.getlist("status") or selected["sources"]
+        or selected["company"] or selected["location"] or selected["q"]
+    )
     return render_template(
         "jobs.html",
         jobs=summaries,
+        new_ids=new_ids,
+        unread=sum(1 for job in summaries if job.opened_at is None),
         selected=selected,
         options=options,
         statuses=STATUSES,
-        any_filter=any(selected.values()),
+        not_interested=NOT_INTERESTED,
+        has_jobs=bool(options["sources"]),
+        # The status filter is the default "To Apply" queue (heading).
+        queue_view=not request.args.getlist("status") and not request.args.get("f"),
+        any_filter=any_filter,
+        sort_url=_sort_url,
         here=request.full_path.rstrip("?"),
     )
+
+
+@bp.post("/jobs/mark-read")
+def mark_read():
+    """Mark every job in the list you were looking at as read."""
+    target = _safe_next(request.form.get("next", ""))
+    selected = _filters(parse_qs(urlsplit(target).query))
+    with get_session() as session:
+        ids = [job.id for job in _summaries(session, selected) if job.opened_at is None]
+        changed = mark_opened(session, ids)
+        session.commit()
+    flash(f"Marked {changed} job(s) as read.", "info")
+    return redirect(target)
 
 
 @bp.get("/jobs/<int:job_id>")
 def job(job_id: int):
     with get_session() as session:
         found = get_job(session, job_id)
+        if found is not None and found.opened_at is None:
+            mark_opened(session, [job_id])  # opening a job marks it read
+            session.commit()
+            session.refresh(found)
     if found is None:
         abort(404)
     return render_template(
@@ -173,7 +270,8 @@ def update_status(job_id: int):
     with get_session() as session:
         if get_job(session, job_id) is None:
             abort(404)
-        set_job_status(session, job_id, status)
+        mark_opened(session, [job_id])  # acting on a job counts as reading it
+        set_job_status(session, job_id, status)  # commits both
     return redirect(_safe_next(request.form.get("next", "")))
 
 

@@ -73,7 +73,7 @@ button { cursor: pointer; background: var(--accent); color: #fff; border-color: 
 
 table.jobs { width: 100%; border-collapse: collapse; }
 .jobs th, .jobs td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
-.jobs th { color: var(--muted); font-weight: 600; }
+.jobs th { color: var(--muted); font-weight: 600; white-space: nowrap; }
 .jobs tbody tr:hover { background: var(--surface); }
 .jobs td select { width: auto; padding: 0.2rem 0.4rem; }
 
@@ -85,6 +85,32 @@ table.jobs { width: 100%; border-collapse: collapse; }
 details { margin: 1rem 0; }
 summary { cursor: pointer; font-weight: 600; }
 .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 0.5rem; }
+
+/* Triage list */
+.listbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.listbar p { margin: 0.25rem 0; }
+.jobs tr.unread td:first-child a { font-weight: 700; }
+.jobs tr:not(.unread) td:first-child a { color: var(--muted); }
+.badge {
+  display: inline-block; margin-left: 0.4rem; padding: 0 0.45rem;
+  border-radius: 999px; background: var(--accent); color: #fff;
+  font-size: 0.75rem; font-weight: 600; vertical-align: middle;
+}
+.jobs th a { color: var(--muted); }
+.row-actions { white-space: nowrap; text-align: right; }
+.row-actions form { display: inline; }
+.row-actions a { text-decoration: none; padding: 0 0.35rem; }
+button.secondary { background: transparent; color: var(--accent); }
+button.dismiss {
+  background: transparent; color: var(--muted); border-color: transparent;
+  padding: 0 0.45rem; font-size: 1.1rem; line-height: 1.4;
+}
+button.dismiss:hover { color: var(--text); border-color: var(--border); }
+.hint { font-size: 0.8rem; margin: 0.25rem 0 0; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
 
 .notice { padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border); }
 .notice-success { background: var(--success-bg); }

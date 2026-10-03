@@ -33,7 +33,7 @@ from sqlalchemy.engine import make_url
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from src.storage.database import _ID_CHUNK_SIZE, _migrate_sqlite_columns, utcnow
-from src.storage.models import JobPost
+from src.storage.models import NOT_INTERESTED, TO_APPLY, JobPost
 
 log = logging.getLogger("jobhunter.archive")
 
@@ -41,7 +41,7 @@ ARCHIVE_FILENAME = "dead_jobs.db"
 
 # Dead rows with these statuses move to the archive. Applied / Interviewing
 # rows stay in the main database, marked dead.
-ARCHIVED_STATUSES = ("To Apply", "Rejected")
+ARCHIVED_STATUSES = (TO_APPLY, "Rejected", NOT_INTERESTED)
 
 _archive_url: Optional[str] = None
 _archive_engine = None

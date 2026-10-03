@@ -34,6 +34,7 @@ from src.storage.database import (
     get_session,
     init_db,
     reconcile_board,
+    record_scrape_run,
     set_database_url,
     upsert_job,
 )
@@ -76,6 +77,8 @@ def main() -> None:
     total_gone = 0
 
     with get_session() as session, get_archive_session() as archive_session:
+        # Jobs first stored from here on are "new" in the dashboard.
+        record_scrape_run(session)
         for plan in plans:
             try:
                 jobs = plan.scraper.scrape()  # unfiltered

@@ -50,6 +50,7 @@ class JobPost(SQLModel, table=True):
 | `posted_at` | `datetime \| None` | Naive UTC. The source's own publish date (Greenhouse `first_published`, falling back to `updated_at`; Lever `createdAt`; Ashby `publishedAt`; Adzuna `created`), or `None` if it doesn't say. Filled in on a later scrape if missing. |
 | `last_seen_at` | `datetime \| None` | Naive UTC. Last time a scrape returned the posting. Board scrapes set it for every listed posting, even ones the filters drop. A recent value keeps the row out of the link-check queue. |
 | `last_checked_at` | `datetime \| None` | Naive UTC. Last time `make check-links` requested the URL, whatever the outcome. |
+| `opened_at` | `datetime \| None` | Naive UTC. When you first opened the job in the dashboard or changed its status; `None` = unread (shown in bold). "Mark these as read" sets it for the whole filtered list. |
 
 ## Dedup strategy
 
@@ -61,9 +62,13 @@ class JobPost(SQLModel, table=True):
 
 This means: if a posting's *identifying* URL changes (e.g. a board re-publishes it under a new listing ID), it's treated as a new job, not an update to an old one. That's a known limitation, not a bug — there's no canonical job identity across re-postings. Dedup is also per-source: the same role posted to two different boards is two rows (different URLs, different `<source>-` prefix).
 
+## Scrape runs
+
+A second small table, `ScrapeRun` (`id`, `started_at`), gets one row each time `make scrape` starts. The dashboard marks a job **New** when its `date_scraped` is at or after the latest run's start, so the badge covers exactly what the last scrape added (jobs you add by hand don't get it). Before the first recorded run there are no New badges.
+
 ## Status lifecycle
 
-`To Apply → Applied → Interviewing → Rejected` is enforced only by the dashboard (`STATUSES` in `src/app/web.py`; a POST with any other status is refused) — the database column is a free-text string with no `CHECK` constraint. Editing a row directly (e.g. via a SQLite browser) could set any string and the app wouldn't reject it.
+`To Apply → Applied → Interviewing → Rejected`, plus `Not interested` for jobs you dismiss, is enforced only by the dashboard (`STATUSES` in `src/storage/models.py`; a POST with any other status is refused). `Not interested` jobs are skipped by `make process` and `make contacts`, and archived like `To Apply` ones when they close — the database column is a free-text string with no `CHECK` constraint. Editing a row directly (e.g. via a SQLite browser) could set any string and the app wouldn't reject it.
 
 ## Dead postings and the archive
 
