@@ -65,6 +65,37 @@ two different searches collapses to one row instead of N (see
 key (config.yaml becomes sensitive — already gitignored), and the API returns
 only a description *snippet*, so generated materials/contacts have less to chew on.
 
+## Worked example 5: `WorkableScraper`
+
+`src/ingestion/workable.py`. The fourth ATS source. Hits the public widget API
+`https://apply.workable.com/api/v1/widget/accounts/<account>?details=true` (the
+`squiz` in `apply.workable.com/squiz`) — one GET per board, no key. Checked
+against live boards on 2026-10-03 (`robots.txt` allows it). Things worth
+knowing:
+
+- **A multi-location posting is listed once per location.** Same `shortcode`
+  and URL, a different city each time (`legalvision` returned 32 entries for 27
+  postings, matching the site's own count). The scraper merges entries by
+  shortcode into one `JobPost` whose location joins every place with `"; "`, so
+  the location filter sees all of them and the board reconciles correctly.
+- **The account slug is case-sensitive** (`SQUIZ` is a 404). An unknown account
+  is a 404 too, so a dead token raises and `make validate` reports it; an
+  account with no openings is a 200 with no jobs.
+- **Descriptions are HTML.** `?details=true` puts one on every job, so there is
+  no per-posting request. The scraper converts it with `html_to_text()`
+  (`src/ingestion/text_util.py`, standard library only), so the dashboard and the
+  cover-letter prompt get text, not markup.
+- **Remote is a `telecommuting` boolean**, folded into the location (`"Remote"`
+  or `"<place> (Remote)"`) like Ashby's `isRemote`, so the shared "remote always
+  passes" filter behaves the same.
+- A pasted single-posting link (`apply.workable.com/j/<code>`) has no account
+  in it, so `source_from_url()` rejects it and asks for the board URL.
+
+Its `job_board_id` is `workable-<sha1(url)[:10]>`, where `url` is
+`https://apply.workable.com/j/<shortcode>`. Not covered: `make discover` does not
+guess Workable accounts (many guessed slugs exist with no openings, which would
+be proposed as "live, no current match"), so add boards by hand.
+
 Why ATS scrapers and not "a scraper per company": most employers rent an ATS
 (Greenhouse, Lever, Ashby, Workday…) rather than build their own job site. A raw
 careers page is bespoke HTML/JS with no general way to scrape it; an ATS exposes
@@ -116,7 +147,7 @@ ATS and token. See `sources.txt.example` and `docs/configuration.md`.
 ## Scope: what a new scraper is allowed to do
 
 In scope: public, non-authenticated pages/feeds and official public APIs
-(Greenhouse, Lever, Ashby boards; the Adzuna search API). Out of scope: logging into a site to scrape
+(Greenhouse, Lever, Ashby, Workable boards; the Adzuna search API). Out of scope: logging into a site to scrape
 behind auth (rules out a sign-in `LinkedInScraper`), and bypassing CAPTCHAs or
 anti-bot measures. If you fork and go further, that's your call and your risk.
 

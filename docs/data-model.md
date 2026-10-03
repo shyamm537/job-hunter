@@ -47,7 +47,7 @@ class JobPost(SQLModel, table=True):
 | `contact_confidence` | `str \| None` | `"published"` / `"pattern-guess"` / `"none"`. **Also the queue signal:** `pending_contact_jobs()` selects rows where this is null, so a looked-up row (even a miss, set to `"none"`) leaves the queue. Free-text, like `status`. |
 | `dead_at` | `datetime \| None` | Naive UTC. When the posting was found closed; `None` = alive. Set by the scrape (board no longer lists it) or `make check-links` (404/410). The first date is kept if a row is marked dead again; cleared if a scrape returns the posting. |
 | `dead_reason` | `str \| None` | Set with `dead_at`: `"gone from board"`, `"http 404"` or `"http 410"`. Cleared with it. |
-| `posted_at` | `datetime \| None` | Naive UTC. The source's own publish date (Greenhouse `first_published`, falling back to `updated_at`; Lever `createdAt`; Ashby `publishedAt`; Adzuna `created`), or `None` if it doesn't say. Filled in on a later scrape if missing. |
+| `posted_at` | `datetime \| None` | Naive UTC. The source's own publish date (Greenhouse `first_published`, falling back to `updated_at`; Lever `createdAt`; Ashby `publishedAt`; Workable `published_on`, falling back to `created_at`; Adzuna `created`), or `None` if it doesn't say. Filled in on a later scrape if missing. |
 | `last_seen_at` | `datetime \| None` | Naive UTC. Last time a scrape returned the posting. Board scrapes set it for every listed posting, even ones the filters drop. A recent value keeps the row out of the link-check queue. |
 | `last_checked_at` | `datetime \| None` | Naive UTC. Last time `make check-links` requested the URL, whatever the outcome. |
 | `opened_at` | `datetime \| None` | Naive UTC. When you first opened the job in the dashboard or changed its status; `None` = unread (shown in bold). "Mark these as read" sets it for the whole filtered list. |
@@ -56,7 +56,7 @@ class JobPost(SQLModel, table=True):
 
 `job_board_id` is `f"{source}-{sha1(<key>)[:10]}"`. Re-running `make scrape` produces the same IDs for postings still live, so `upsert_job()` (`src/storage/database.py`) skips them instead of inserting duplicates. What goes into the hash depends on the source:
 
-- **ATS boards (Greenhouse, Lever, Ashby)** hash the posting URL directly.
+- **ATS boards (Greenhouse, Lever, Ashby, Workable)** hash the posting URL directly. Workable lists a posting with several locations once per location (same `shortcode` and URL); the scraper merges those into one row, so the id is the same either way.
 - **Jobs added by hand** (the dashboard's "Add a job", `add_manual_job()`) are `manual-<hash>`: the hash of the URL if one was given, otherwise of the lower-cased title + company + description, so adding the same job twice finds the first one. `manual-` rows are never board-reconciled or link-checked, and `pending_llm_jobs()` returns them first.
 - **Adzuna** hashes Adzuna's own ad `id` (`id_dedup_key()` in `src/ingestion/adzuna.py`), so the same ad surfaced by two different searches is one row whatever tracking params (`se`, `utm_*`) its `redirect_url` carries. If a result ever lacks an `id`, the key falls back to a hash of the URL's scheme + host + path. Rows scraped before the switch to `id` were keyed by a hash of the full URL, which stored the same ad up to eight times; `python -m src.storage.adzuna_rekey` re-keyed them from the ad id in the stored URL (`/details/<id>` or `/land/ad/<id>`) and merged the copies, keeping generated materials, contact lookups and status (KAN-7). It's a dry run without `--apply`, and re-running is a no-op.
 
@@ -75,7 +75,7 @@ A second small table, `ScrapeRun` (`id`, `started_at`), gets one row each time `
 A posting is marked dead (`dead_at`, plus a short `dead_reason`) in two ways:
 
 - **`"gone from board"`**: after a successful scrape of a Greenhouse, Lever
-  or Ashby board, any stored row for that board that the board no longer lists
+  Ashby or Workable board, any stored row for that board that the board no longer lists
   (`reconcile_board()` in `src/storage/database.py`). A board's rows are the
   `<source>-` rows whose `company` is the board token. A failed or empty scrape
   changes nothing. Rows still listed get `last_seen_at`, even when the filters

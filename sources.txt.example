@@ -12,12 +12,15 @@
 #   greenhouse <token>   # an ATS board, by company token
 #   lever <token>
 #   ashby <token>
+#   workable <account>   # case-sensitive: the part after apply.workable.com/
 #
 # Or just paste the board's careers URL — the type + token are auto-detected:
 #   https://boards.greenhouse.io/<token>      # → greenhouse <token>
 #   https://job-boards.greenhouse.io/<token>  # newer Greenhouse host
 #   https://jobs.lever.co/<token>             # → lever <token>
 #   https://jobs.ashbyhq.com/<token>          # → ashby <token>
+#   https://apply.workable.com/<account>      # → workable <account> (the board,
+#                                             #   not a single posting's /j/ link)
 
 adzuna au
 adzuna in

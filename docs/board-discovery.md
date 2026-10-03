@@ -17,9 +17,12 @@ detects the ATS + token for you (`source_from_url`, `src/config.py`):
 greenhouse acme
 lever acme
 ashby acme
+workable acme                             # case-sensitive: as in apply.workable.com/acme
 https://job-boards.greenhouse.io/acme     # pasted URL → auto-detected
 https://jobs.lever.co/acme
 https://jobs.ashbyhq.com/acme
+https://apply.workable.com/acme           # the board URL; a single posting's
+                                          # apply.workable.com/j/<code> link is rejected
 ```
 
 Then re-validate so you don't add a dead token:
@@ -27,6 +30,9 @@ Then re-validate so you don't add a dead token:
 ```bash
 make validate                  # checks everything your config resolves
 ```
+
+Workable boards are manual-only too: `make discover` does not guess Workable
+accounts (it still checks only Greenhouse, Lever and Ashby), so add them by hand.
 
 Workday boards are **manual-only** for now: their data-center subdomain (`wd5`)
 isn't derivable from a name, so they can only be added from a pasted careers URL

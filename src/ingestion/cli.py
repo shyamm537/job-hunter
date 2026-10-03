@@ -5,7 +5,7 @@ and writes new postings into the database. Run this, then `make process` to
 generate materials, then `make app` to view everything.
 
 Adzuna sources expand into one search per (title, location); ATS boards
-(Greenhouse, Lever, Ashby) are scraped whole and then filtered by the same
+(Greenhouse, Lever, Ashby, Workable) are scraped whole and then filtered by the same
 titles and locations. Each planned scrape runs independently — one failing
 (network error, bad token) is logged and skipped, not fatal.
 

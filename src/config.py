@@ -3,11 +3,11 @@
 The config separates *what* you're looking for from *where* you look:
 
 - `filters`: the titles and locations you want (shared across all sources).
-- `sources`: where to look — an Adzuna search, or a Greenhouse/Lever/Ashby board.
+- `sources`: where to look — an Adzuna search, or a Greenhouse/Lever/Ashby/Workable board.
 
 This split exists because the source types use that intent differently. Adzuna
 is a search engine, so each (title, location) becomes a query. An ATS board
-(Greenhouse, Lever, Ashby) returns a company's whole list, so the filters are
+(Greenhouse, Lever, Ashby, Workable) returns a company's whole list, so the filters are
 applied to the results afterwards. Keeping titles/locations out of the
 per-source lines is what makes the source file clean and the model easy to
 reason about.
@@ -86,6 +86,14 @@ class AshbySource(BaseModel):
     org: str
 
 
+class WorkableSource(BaseModel):
+    """A Workable board. `account` is the public token, e.g. the `squiz` in
+    `apply.workable.com/squiz`. Case-sensitive: use it exactly as it appears."""
+
+    type: Literal["workable"]
+    account: str
+
+
 class AdzunaSource(BaseModel):
     """An Adzuna search, scoped to one country index (`au`, `in`, `gb`, ...).
 
@@ -108,7 +116,7 @@ class AdzunaSource(BaseModel):
 
 # Discriminated union: Pydantic picks the model by the `type` field.
 Source = Annotated[
-    Union[GreenhouseSource, LeverSource, AshbySource, AdzunaSource],
+    Union[GreenhouseSource, LeverSource, AshbySource, WorkableSource, AdzunaSource],
     Field(discriminator="type"),
 ]
 
@@ -242,6 +250,7 @@ _ATS_HOSTS = {
     "job-boards.greenhouse.io": "greenhouse",
     "jobs.lever.co": "lever",
     "jobs.ashbyhq.com": "ashby",
+    "apply.workable.com": "workable",
 }
 
 
@@ -263,6 +272,7 @@ def source_from_url(url: str, where: str = "url") -> Source:
         https://job-boards.greenhouse.io/stripe  → greenhouse stripe
         https://jobs.lever.co/metabase           → lever metabase
         https://jobs.ashbyhq.com/ashby           → ashby ashby
+        https://apply.workable.com/squiz         → workable squiz
 
     The scheme is optional (`boards.greenhouse.io/stripe` works), trailing
     paths/slashes are ignored (a deep posting link still yields the org token),
@@ -293,10 +303,19 @@ def source_from_url(url: str, where: str = "url") -> Source:
         )
     token = segments[0]
 
+    # A Workable posting link is apply.workable.com/j/<shortcode>: its first
+    # segment is "j", not an account, so there is no board to read off it.
+    if ats == "workable" and token.lower() == "j":
+        raise ConfigError(
+            f"{where}: {url!r} is a single Workable posting, not a board — paste the "
+            "board URL instead (https://apply.workable.com/<account>)"
+        )
+
     returnables = {
         "greenhouse": GreenhouseSource(type="greenhouse", board=token),
         "lever": LeverSource(type="lever", company=token),
         "ashby": AshbySource(type="ashby", org=token),
+        "workable": WorkableSource(type="workable", account=token),
     }
 
     return returnables[ats]
@@ -313,6 +332,8 @@ def source_to_line(source: Source) -> str:
         return f"lever {source.company}"
     if source.type == "ashby":
         return f"ashby {source.org}"
+    if source.type == "workable":
+        return f"workable {source.account}"
     if source.type == "adzuna":
         return f"adzuna {source.country}"
     raise ValueError(f"Unknown source type: {source.type!r}")
@@ -344,6 +365,12 @@ def _source_from_line(path: str, lineno: int, parts: List[str]) -> Source:
                 f"{path} line {lineno}: 'ashby' needs exactly one org token"
             )
         return AshbySource(type="ashby", org=args[0])
+    if kind == "workable":
+        if len(args) != 1:
+            raise ConfigError(
+                f"{path} line {lineno}: 'workable' needs exactly one account token"
+            )
+        return WorkableSource(type="workable", account=args[0])
     if kind == "adzuna":
         if len(args) > 1:
             raise ConfigError(
@@ -354,7 +381,7 @@ def _source_from_line(path: str, lineno: int, parts: List[str]) -> Source:
         return AdzunaSource(type="adzuna", country=country)
     raise ConfigError(
         f"{path} line {lineno}: unknown source type {parts[0]!r} "
-        "(expected greenhouse, lever, ashby, or adzuna)"
+        "(expected greenhouse, lever, ashby, workable, or adzuna)"
     )
 
 
@@ -368,6 +395,7 @@ def load_sources_file(path: str) -> List[Source]:
         greenhouse stripe    # an ATS board, by company token
         lever figma
         ashby ashby
+        workable squiz
         https://jobs.lever.co/metabase   # a pasted careers URL also works
 
     Titles and locations are NOT in this file — they live in `filters`.

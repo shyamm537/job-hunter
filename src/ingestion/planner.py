@@ -7,7 +7,7 @@ intent differently:
 - Adzuna is a search engine: each (title, location) pair becomes one
   search, so a single search source expands into len(titles) x len(locations)
   scrapers. Nothing to post-filter — the query already did it.
-- An ATS board (Greenhouse, Lever, Ashby) returns a company's whole list, so we
+- An ATS board (Greenhouse, Lever, Ashby, Workable) returns a company's whole list, so we
   scrape it once and filter the postings afterwards (post_filter=True; see
   src/ingestion/filtering.py).
 
@@ -20,12 +20,13 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from src.config import DEFAULT_LOCATION, ConfigError, Filters, Source
-from src.config import AshbySource, LeverSource, GreenhouseSource, AdzunaSource
+from src.config import AshbySource, LeverSource, GreenhouseSource, AdzunaSource, WorkableSource
 from src.ingestion.adzuna import AdzunaScraper, country_of
 from src.ingestion.ashby import AshbyScraper
 from src.ingestion.base_scraper import BaseScraper
 from src.ingestion.greenhouse import GreenhouseScraper
 from src.ingestion.lever import LeverScraper
+from src.ingestion.workable import WorkableScraper
 
 log = logging.getLogger("jobhunter.plan")
 
@@ -37,7 +38,7 @@ class PlannedScrape:
     # Whether to apply the title/location filters to results after scraping.
     # True for ATS boards, False for Adzuna (its query already filtered).
     post_filter: bool
-    # (source, token) for a whole-board scrape (Greenhouse/Lever/Ashby). The
+    # (source, token) for a whole-board scrape (Greenhouse/Lever/Ashby/Workable). The
     # scrape CLI uses it to compare the board's stored rows with what the
     # board still lists (reconcile_board). None for Adzuna: a search result
     # isn't a complete list, so a missing posting proves nothing.
@@ -133,11 +134,28 @@ def plan_ashby(
     ]
 
 
+def plan_workable(
+    source: WorkableSource,
+    titles: List[str],
+    locations: List[str],
+    adzuna_auth: Optional[Tuple[str, str]] = None,
+) -> List[PlannedScrape]:
+    return [
+        PlannedScrape(
+            WorkableScraper(account=source.account),
+            f"workable[{source.account}]",
+            post_filter=True,
+            board=("workable", source.account),
+        )
+    ]
+
+
 SOURCE_PLANNERS = {
     "adzuna": plan_adzuna,
     "greenhouse": plan_greenhouse,
     "lever": plan_lever,
     "ashby": plan_ashby,
+    "workable": plan_workable,
 }
 
 
