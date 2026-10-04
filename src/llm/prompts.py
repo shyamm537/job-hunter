@@ -42,3 +42,23 @@ def cold_email_greeting(contact_name: str | None) -> str:
         first = contact_name.split()[0]
         return f"Hi {first},"
     return "Hi,"
+
+
+# The materials the LLM writes: kind -> (JobPost column, template, label).
+# `make process` writes both; the dashboard's job page can write either one.
+MATERIALS = {
+    "cover_letter": ("generated_cover_letter", COVER_LETTER_TEMPLATE, "cover letter"),
+    "cold_email": ("generated_cold_email", COLD_EMAIL_TEMPLATE, "cold email"),
+}
+
+
+def build_prompt(kind: str, job, resume_summary: str) -> str:
+    """The prompt for one material (a MATERIALS key) for one JobPost."""
+    _, template, _ = MATERIALS[kind]
+    return template.format(
+        title=job.title,
+        company=job.company,
+        description=job.description,
+        resume_summary=resume_summary,
+        greeting=cold_email_greeting(job.contact_name),
+    )

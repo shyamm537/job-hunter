@@ -2,7 +2,8 @@
 
 This is the queue consumer: it reads jobs with no generated cover letter
 yet, calls the LLM client for each, and writes the results back. The
-dashboard never calls the LLM directly — it only reads what this script produces.
+dashboard can also generate one job's material on demand (src/app/generate.py);
+a cold email written that way is kept here rather than regenerated.
 
 Config and logging go through the shared layers (`src/config.py`,
 `src/logging_config.py`) like the rest of the pipeline. The LLM client
@@ -15,11 +16,7 @@ import sys
 
 from src.config import ConfigError, load_config
 from src.llm.client import get_llm_client
-from src.llm.prompts import (
-    COLD_EMAIL_TEMPLATE,
-    COVER_LETTER_TEMPLATE,
-    cold_email_greeting,
-)
+from src.llm.prompts import build_prompt
 from src.logging_config import setup_logging
 from src.storage.database import (
     count_pending_llm_jobs,
@@ -65,23 +62,17 @@ def main() -> None:
         )
 
         for job in jobs:
-            fmt_kwargs = dict(
-                title=job.title,
-                company=job.company,
-                description=job.description,
-                resume_summary=resume_summary,
-                greeting=cold_email_greeting(job.contact_name),
-            )
             try:
                 # Generate both materials before committing so a row never
                 # leaves the queue (cover letter set) with a missing cold
                 # email. The client already retries transient failures; if it
                 # still raises, this job is skipped and the batch continues.
+                # A cold email already generated from the dashboard is kept.
                 cover_letter = client.generate(
-                    COVER_LETTER_TEMPLATE.format(**fmt_kwargs)
+                    build_prompt("cover_letter", job, resume_summary)
                 )
-                cold_email = client.generate(
-                    COLD_EMAIL_TEMPLATE.format(**fmt_kwargs)
+                cold_email = job.generated_cold_email or client.generate(
+                    build_prompt("cold_email", job, resume_summary)
                 )
             except KeyboardInterrupt:
                 # Ctrl-C mid-job: discard this job's partial state and stop.

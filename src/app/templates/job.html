@@ -47,18 +47,47 @@
     </details>
   {% endif %}
 
-  <h2>Cover letter</h2>
-  {% if job.generated_cover_letter %}
-    <textarea readonly rows="14" aria-label="Cover letter">{{ job.generated_cover_letter }}</textarea>
-  {% else %}
-    <p class="muted">No cover letter generated yet &mdash; run <code>make process</code>.</p>
-  {% endif %}
+  {# One section per material: the text, plus a button that generates it for
+     this job alone (in the background; see src/app/generate.py). #}
+  {% macro material(kind, heading, button, text, rows) %}
+    <section class="material">
+      <div class="material-head">
+        <h2>{{ heading }}</h2>
+        {% if kind in generating %}
+          <button type="button" disabled>Generating&hellip;</button>
+        {% else %}
+          <form method="post" action="{{ url_for('web.generate', job_id=job.id) }}">
+            <input type="hidden" name="kind" value="{{ kind }}">
+            <button type="submit">{{ "Regenerate" if text else "Generate" }} {{ button }}</button>
+          </form>
+        {% endif %}
+      </div>
+      {% if errors[kind] %}<p class="notice notice-error">{{ errors[kind] }}</p>{% endif %}
+      {% if text %}
+        <textarea readonly rows="{{ rows }}" aria-label="{{ heading }}">{{ text }}</textarea>
+      {% elif kind in generating %}
+        <p class="muted">Generating &mdash; this can take a few minutes.</p>
+      {% else %}
+        <p class="muted">Not generated yet. Use the button, or run <code>make process</code>.</p>
+      {% endif %}
+    </section>
+  {% endmacro %}
+  {{ material("cover_letter", "Cover letter", "cover letter", job.generated_cover_letter, 14) }}
+  {{ material("cold_email", "Cold email", "email", job.generated_cold_email, 9) }}
 
-  <h2>Cold email</h2>
-  {% if job.generated_cold_email %}
-    <textarea readonly rows="9" aria-label="Cold email">{{ job.generated_cold_email }}</textarea>
-  {% else %}
-    <p class="muted">No cold email generated yet &mdash; run <code>make process</code>.</p>
+  {% if generating %}
+    <noscript><p class="muted"><a href="{{ here }}">Refresh</a> to see whether it's done.</p></noscript>
+    <script>
+      // Reload once nothing is generating for this job any more.
+      (function poll() {
+        setTimeout(function () {
+          fetch("{{ url_for('web.generating', job_id=job.id) }}")
+            .then(function (r) { return r.json(); })
+            .then(function (d) { if (d.running.length) poll(); else location.reload(); })
+            .catch(poll);
+        }, 5000);
+      })();
+    </script>
   {% endif %}
 </article>
 {% endblock %}
