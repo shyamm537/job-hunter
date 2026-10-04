@@ -209,6 +209,37 @@ Detection lives in `source_from_url()` (`src/config.py`).
 A bad line fails with a `ConfigError` naming the line number. See
 `sources.txt.example`.
 
+## Companies file and the board map
+
+Instead of naming boards, you can list the employers you want and let the
+program find their boards (see [`board-discovery.md`](./board-discovery.md)):
+
+```yaml
+companies_file: "companies.txt"     # unset = the whole feature is off
+resolve:
+  boards: [greenhouse, lever, ashby, workable]   # default: every resolvable type
+  recheck_days: 14      # a company is checked again after this many days
+  stale_after: 3        # reserved for noticing a move during a scrape (not used yet)
+board_map_file: "data/board_map.yaml"            # default
+```
+
+- `companies_file` is a plain-text file, one employer per line (`Name`, or
+  `Name | alias, alias`, or a `- <board>` block line). See
+  `companies.txt.example`. `make resolve` checks the companies against the
+  boards and writes `board_map_file`, which `make scrape` reads.
+- The final source list is the **pinned** sources (inline `sources` plus
+  `sources_file`) plus the map's `live` boards. A pinned board wins over a mapped
+  one: two boards are the same when their type and token match ignoring case
+  (a Workday board is identified by its tenant), and the pinned one is kept,
+  with its token as written. With `companies_file` unset the map is ignored even
+  if the file exists.
+- `resolve.boards` may name only the types that resolve from a name:
+  `greenhouse`, `lever`, `ashby`, `workable`. An unknown name is a `ConfigError`
+  listing the valid ones. Workday is not in the list: it comes from a careers
+  URL alias.
+- `companies_file` alone satisfies the "at least one source" rule, but until
+  `make resolve` has run the map is empty and `make scrape` says so.
+
 ## Field reference
 
 | Key | Used by | Status |
@@ -225,13 +256,16 @@ A bad line fails with a `ConfigError` naming the line number. See
 | `sources[].type: workable` (`account`) | `WorkableScraper`, then post-filtered | Implemented. `account` is the `apply.workable.com/<account>` token, case-sensitive. |
 | `sources[].type: workday` (`tenant`, `datacenter`, `site`) | `WorkdayScraper`, then post-filtered | Implemented. All three come from the careers URL (`cba`, `wd3`, `CommBank_Careers`); one site per tenant. See [`workday.md`](./workday.md). |
 | `sources_file` | `src/config.py` → `load_sources_file()` | Implemented. Appended to inline `sources`. |
+| `companies_file` | `src/config.py` → `load_companies_file()`, `src/ingestion/resolve.py` | Implemented. Optional; employers whose boards `make resolve` finds. Unset = feature off. |
+| `board_map_file` | `src/ingestion/board_map.py` | Implemented. Default `data/board_map.yaml`; generated, do not edit. |
+| `resolve.boards` / `resolve.recheck_days` / `resolve.stale_after` | `src/ingestion/resolve.py` | `boards` and `recheck_days` implemented; `stale_after` is reserved. |
 | `adzuna.app_id` / `adzuna.app_key` | `src/ingestion/planner.py` → `AdzunaScraper` | Implemented. Free from developer.adzuna.com. |
 | `llm.backend` / `llm.model` / `llm.host` | `src/llm/client.py` | Implemented. Only `ollama` valid in the LLM layer; config layer permits extra `llm.*` keys (backend undecided). |
 | `resume_summary` | `src/llm/cli.py` → prompt templates | Implemented; a hand-written string, not parsed from a file. |
 | `database.url` | `src/storage/database.py` | Wired. See below. |
 
-At least one of `sources` or `sources_file` must be present, or validation
-fails. `make scrape` also stops with a clear error if they add up to no active
+At least one of `sources`, `sources_file` or `companies_file` must be present,
+or validation fails. `make scrape` also stops with a clear error if they add up to no active
 sources (e.g. every line in `sources.txt` commented out). The old single-search
 `search:` block was removed along with SEEK; a config that still has one fails
 with a message saying to move it into `filters` + `sources`.

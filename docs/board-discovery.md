@@ -1,16 +1,139 @@
 # Growing the board list
 
-A job hunt runs for months; a static board list goes stale and caps your reach.
-But the fix is **not** "add more boards" — auto-adding random boards is the
-firehose `TODO.md` rejects: it grows the pipeline's noise (more pending jobs to
-LLM-process, more dashboard clutter) without growing relevant supply. The goal is
-to grow **relevance** and fight **decay**. Three mechanisms, in order of how
-hands-off they are.
+A job hunt runs for months, and companies change boards while a fixed list of
+board-company pairs does not. Auto-adding *random* boards is the firehose
+`TODO.md` rejects: it grows the pipeline's noise (more pending jobs to
+LLM-process, more dashboard clutter) without growing relevant supply. So the
+project keeps two lists and lets the program join them. **You choose the
+companies; the program finds their boards.**
 
-## 1. Manual add (always available)
+| List | Where | Who keeps it |
+|---|---|---|
+| **Companies** | `companies.txt` (gitignored; copy `companies.txt.example`) | You: the employers you want to follow, no board named |
+| **Boards** | the registry in code (`RESOLVABLE`, `src/config.py`), switchable with `resolve.boards` in `config.yaml` | The project: the board types it can read (Greenhouse, Lever, Ashby, Workable; Workday from a URL) |
 
-The most precise way to add a board is to paste its careers URL. The parser
-detects the ATS + token for you (`source_from_url`, `src/config.py`):
+`make resolve` checks every company against every board and writes the result to
+a generated **board map**, `data/board_map.yaml`. `make scrape` reads the map as
+well as `sources.txt`. Boards you list in `sources.txt` by hand are **pinned**:
+a pinned board always wins over the map, and the Adzuna lines stay in
+`sources.txt`.
+
+## 1. Companies and the board map (`make resolve`)
+
+```
+# companies.txt
+Canva
+Atlassian
+Commonwealth Bank | cba, https://cba.wd3.myworkdayjobs.com/CommBank_Careers
+Flinders University | flinders
+- ashby amp
+```
+
+One employer per line; blank lines and `#` comments (whole line or trailing) are
+ignored. Names may contain apostrophes (`Moody's`). Duplicate names are an error.
+
+- **Name**: turned into board tokens by `slug_variants()` (`discover.py`): it
+  drops "Pty Ltd" and similar, and tries a joined and a hyphenated form
+  (`Foo Bar` gives `foobar` and `foo-bar`).
+- **Aliases** after `|`, comma-separated. A plain word is an extra token to try,
+  used exactly as written (Workable accounts are case-sensitive); you need one
+  when the board token is not the name (`cba` for Commonwealth Bank). A careers
+  URL is a **known board** for that company. This is how a Workday board gets
+  in, since its data centre and site cannot be guessed from a name.
+- **Block line** (`- <sources line>`): never use this board, for any company.
+  Use it for a token that belongs to someone else (see the limits below).
+
+Turn the feature on in `config.yaml`:
+
+```yaml
+companies_file: "companies.txt"     # unset = the whole feature is off
+resolve:
+  boards: [greenhouse, lever, ashby, workable]   # default: every resolvable type
+  recheck_days: 14      # placeholder until the maintenance cycle is decided
+  stale_after: 3        # not used yet: for noticing a move during a scrape (planned)
+# board_map_file: "data/board_map.yaml"          # default
+```
+
+Then:
+
+```bash
+make resolve                   # check the companies that are due, save the map
+python -m src.ingestion.resolve --dry-run       # print the report, save nothing
+python -m src.ingestion.resolve --company "Canva"   # one company, due or not
+python -m src.ingestion.resolve --all --limit 5     # every company, at most 5
+make validate                  # lists pinned and mapped boards
+make scrape                    # scrapes pinned boards plus the map's live boards
+```
+
+What a run does:
+
+1. Loads `companies.txt` and the map; drops map entries for companies no longer
+   in the file.
+2. Picks the companies that are **due**: not in the map yet, flagged for a
+   check, or last checked more than `recheck_days` ago.
+3. For each, tries every enabled board type with every token (aliases as
+   written, then the name's slugs), plus each URL alias. Blocked boards are
+   skipped; a board already pinned in `sources.txt` is reported as `pinned` and
+   not added to the map.
+4. Checks each candidate with `validate_source()` (the same call `make validate`
+   makes, without the per-posting detail requests), pausing between requests.
+5. Records the answers: **live** (has postings, scraped), **empty** (the board
+   answers with no postings, not scraped), **gone** (was in the map and now does
+   not answer, not scraped, kept so the report can say where a company moved
+   from). Every company is checked against every board and all live boards are
+   kept; it does not stop at the first hit.
+6. Prints a report, one row per board with a flag (`NEW`, `MOVED`, `BACK`,
+   `EMPTY`, `GONE`, `NOT FOUND` for a URL alias that did not answer). Each new
+   board is followed by three sample postings, so a wrong company stands out.
+
+**New matches go live without approval.** This replaces the old
+propose-then-approve rule, which was written against auto-adding boards of
+companies nobody chose. Here you choose the companies, so adding their boards is
+the point. The safeguards are the report (every new board is flagged, with
+samples) and the block line, which removes a wrong match for good.
+
+The map is a YAML file the program rewrites on every save: comments and key
+order do not survive, so do not edit it. Put names, aliases and block lines in
+`companies.txt` instead. It is read and written only by
+`src/ingestion/board_map.py`. With `companies_file` unset the map is ignored even
+if it exists.
+
+Cost: (2 slugs + aliases) x 4 boards requests per company, most of them quick
+404s. Twenty companies is about 160 requests on the first run and almost none
+after that until a company is due again. These are the same public endpoints
+the scrapers use, with the same polite User-Agent and backoff.
+
+`make resolve` is run by hand. There is no scheduled run: how often boards and
+postings are re-checked belongs to a later maintenance cycle, so `recheck_days`
+is one config value that work can change.
+
+### What this can and can't do (honest limits)
+
+- **A token can belong to someone else.** `amp` on Ashby is not the Australian
+  AMP. The check proves a board exists, not whose it is. The sample postings in
+  the report and the block line are the defence.
+- **Token is not the name.** A company whose token differs from its name slug is
+  missed until you add an alias or a careers URL. Workday is always in this
+  group.
+- **Empty is ambiguous.** An empty Workable account can be a real employer with
+  no openings or an abandoned account. Either way it is not scraped.
+- **A failed check marks a mapped board `gone`.** The resolve step cannot tell a
+  timeout from a missing board, so a transient failure during a check can mark a
+  live mapped board `gone` until that company is checked again (`--company`
+  fixes it at once). The planned scrape-time check will count only definite
+  answers (404, 410, 422 or no postings), at most once a day.
+- **Moves are not noticed during a scrape yet.** For now a board that dies keeps
+  its stored rows, and a company that moves boards is picked up only
+  at its next due check.
+- **Don't run `make resolve` and `make scrape` at the same time** once the
+  scrape also writes the map (planned); the atomic save prevents a broken file,
+  not a lost update.
+
+## 2. Adding a board by hand (always available)
+
+To pin a board, put a line in `sources.txt`. The most precise way is to paste
+its careers URL; the parser detects the ATS + token for you
+(`source_from_url`, `src/config.py`):
 
 ```
 # in sources.txt — any of these forms work, one per line:
@@ -33,31 +156,30 @@ Then re-validate so you don't add a dead token:
 make validate                  # checks everything your config resolves
 ```
 
-Workable boards are manual-only too: `make discover` does not guess Workable
-accounts (it still checks only Greenhouse, Lever and Ashby), so add them by hand.
+A pinned board that is also in the map is scraped once, as the pinned line.
 
-Workday boards are **manual-only**: their data-center subdomain (`wd5`) isn't
-derivable from a name, so they can only be added from a pasted careers URL
-(`https://cba.wd3.myworkdayjobs.com/en-US/CommBank_Careers`) or the three-token form
-(`workday cba wd3 CommBank_Careers`). See [`docs/workday.md`](./workday.md) for the
-limits (one site per tenant, boards of 2,000+ postings can't be read).
+Workday boards cannot be found from a name: their data-center subdomain (`wd5`)
+isn't derivable from one, so they come from a pasted careers URL (in
+`sources.txt`, or as a URL alias in `companies.txt`) or the three-token form
+(`workday cba wd3 CommBank_Careers`). See [`docs/workday.md`](./workday.md) for
+the limits (one site per tenant, boards of 2,000+ postings can't be read).
 
-## 2. Discovery from your Adzuna results (`make discover`)
+## 3. Proposals from your Adzuna results (`make discover`)
 
-Semi-automated, **propose-then-approve**. Your search source (Adzuna) already surfaces
-companies hiring your exact roles. `make discover` (`src/ingestion/discover.py`):
+The older, propose-then-approve route. Your search source (Adzuna) already
+surfaces companies hiring your exact roles. `make discover`
+(`src/ingestion/discover.py`):
 
 1. Reads the distinct **companies** from Adzuna postings already in your DB.
-2. Slugifies each name into candidate board tokens (drops legal suffixes like
-   "Pty Ltd"; tries a joined and a hyphenated form).
-3. Builds Greenhouse/Lever/Ashby candidates and **validates each live** (reusing
-   `make validate`'s machinery), skipping boards you already have.
+2. Slugifies each name into candidate board tokens (the same `slug_variants()`).
+3. Builds Greenhouse/Lever/Ashby/Workable candidates and **validates each live**,
+   skipping boards you already have.
 4. Writes the confirmed-live ones as **commented proposals** to
    `sources.discovered.txt`, matches first.
 
-Nothing is added automatically. You review, uncomment the keepers (the trailing
-`# match: N role(s)` note can stay), and move them
-into `sources.txt`:
+Nothing is added from here automatically: you review, uncomment the keepers and
+move them into `sources.txt`, or add the company names you want to
+`companies.txt` and let `make resolve` find them.
 
 ```bash
 make scrape       # populate Adzuna companies first (if you haven't)
@@ -66,35 +188,22 @@ make discover     # writes sources.discovered.txt
 make validate     # sanity-check the merged list
 ```
 
-### What discovery can and can't do (honest limits)
+Discovery has the same limits as resolving (no false positives, plenty of false
+negatives, and a token can belong to another company), is only as good as your
+Adzuna data, and makes live API calls (companies x ~2 slugs x 4 boards; bound it
+with `--limit N`).
 
-- **No false positives, plenty of false negatives.** Every proposal is validated,
-  so a proposed board is real. But it only finds companies whose board **token
-  equals the name slug** (`Acme` → `acme`). When the token differs (`acme-inc`,
-  an acronym, a parent-company token) or the company is on Workday, it misses.
-  Treat it as "free easy wins," not full coverage.
-- **It's only as good as your Adzuna data.** Discovery proposes from companies Adzuna
-  already returned for your titles/locations — relevant by construction, but
-  bounded by what Adzuna surfaces.
-- **It makes live API calls** (companies × ~2 slugs × 3 ATS). Bounded with
-  `--limit N`. In-scope: same public endpoints as the scrapers, polite UA +
-  backoff via `http_util`.
-
-## 3. Maintenance: keep the list from rotting
+## 4. Maintenance: keep the list from rotting
 
 Tokens go stale over a months-long hunt. `make validate` reports `match` / `live`
-/ `dead`; re-run it periodically and drop the dead ones. To make it routine,
-schedule it on your own machine (cron / Task Scheduler) — e.g. weekly:
+/ `dead`. For pinned boards, re-run it periodically and drop the dead ones:
 
 ```bash
 python -m src.ingestion.validate --out sources.txt   # rewrites with live boards only
 ```
 
+`--out` writes the **pinned** sources only (never the board map's boards, which
+would otherwise be copied into `sources.txt` and pinned). For mapped boards,
+re-run `python -m src.ingestion.resolve --all` (or just wait for a company to become due).
+
 (Run validation where the network reaches the ATS APIs — i.e. your machine.)
-
-## Why not fully automatic?
-
-Auto-adding every discovered live board re-creates the firehose and lowers signal
-(see `TODO.md`'s boards discussion). The curation gate — you approving proposals —
-is cheap and is what keeps the pipeline pointed at roles you actually want. The
-automation does the tedious part (detection + validation); you keep the judgment.
