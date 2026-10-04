@@ -1,6 +1,6 @@
 # Job Hunter AI — sources file (copy to sources.txt, point config.yaml's
 # `sources_file:` at it). One source per line. Blank lines and #-comments
-# ignored. Titles and locations are NOT here — they live in the `filters`
+# ignored (a whole line, or a comment after an entry: `greenhouse stripe  # note`). Titles and locations are NOT here — they live in the `filters`
 # block in config.yaml. These lines only say WHERE to look.
 #
 # This file is MERGED with config.yaml's inline `sources:` (appended, not

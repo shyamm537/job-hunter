@@ -448,10 +448,31 @@ def _source_from_line(path: str, lineno: int, parts: List[str]) -> Source:
     )
 
 
+def _split_source_line(line: str) -> List[str]:
+    """Split one sources-file line into tokens, dropping a trailing comment.
+
+    A token that starts with `#` begins a comment: it and everything after it
+    are ignored, whatever they contain (an apostrophe in a comment is not a
+    quoting error). A `#` inside a token stays part of it, so a URL fragment
+    survives, and a `#` with no space before it (`au#x`) is not a comment.
+    Quotes are still honoured in the entry itself, as before.
+    """
+    lexer = shlex.shlex(line, posix=True)
+    lexer.whitespace_split = True  # split on whitespace only, as shlex.split does
+    lexer.commenters = ""  # shlex's own comment handling cuts mid-token; do it by hand
+    parts: List[str] = []
+    for token in lexer:  # lazy: text after the comment marker is never read
+        if token.startswith("#"):
+            break
+        parts.append(token)
+    return parts
+
+
 def load_sources_file(path: str) -> List[Source]:
     """Parse a plain-text sources file into Source models.
 
-    One source per line; blank lines and `#` comments ignored. Format:
+    One source per line; blank lines and `#` comments ignored, whether the
+    comment is a whole line or follows an entry. Format:
 
         adzuna au            # an Adzuna search, country index au (needs creds)
         adzuna in            # ... and India
@@ -474,7 +495,7 @@ def load_sources_file(path: str) -> List[Source]:
         if not line or line.startswith("#"):
             continue
         try:
-            parts = shlex.split(line)
+            parts = _split_source_line(line)
         except ValueError as exc:
             raise ConfigError(f"{path} line {lineno}: {exc}") from exc
         if not parts:
