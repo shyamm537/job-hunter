@@ -277,6 +277,8 @@ class Config(BaseModel):
     adzuna: Optional[AdzunaConfig] = None
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     resume_summary: str = ""
+    # Signs the generated letters. Empty = no signature line (never "[Your Name]").
+    candidate_name: str = ""
 
     @model_validator(mode="before")
     @classmethod

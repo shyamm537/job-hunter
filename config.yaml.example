@@ -75,6 +75,16 @@ llm:
   retry_backoff: 1.0            # base seconds; waits retry_backoff * 2**attempt
   timeout: 600                  # seconds to wait for one generation; 0 = no limit
 
+# ── Who the letters are about ───────────────────────────────────────────────
+# The cover letter and cold email are written from this text and nothing else:
+# the model is told not to claim anything that is not in it. Name your degree,
+# employers, tools and years of experience.
+# resume_summary: >
+#   Data science postgraduate with three years as an analyst, working in Python,
+#   SQL and Tableau.
+# Signs the letters. Leave it out and they end with no signature line.
+# candidate_name: "Your Full Name"
+
 # ── Adzuna search API (optional) ────────────────────────────────────────────
 # Sanctioned job-search API with a free tier; per-country (au, in, gb, ...).
 # It's the only search source, and every `adzuna` source needs these creds.

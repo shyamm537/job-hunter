@@ -35,7 +35,9 @@ def create_app(config: Optional[Config] = None) -> Flask:
     # there's no secret to manage; flash messages just don't survive a restart.
     app.secret_key = os.urandom(32)
     app.config["ALLOWED_HOSTS"] = LOCAL_HOSTS
-    app.extensions["generator"] = Generator(config.llm.model_dump(), config.resume_summary)
+    app.extensions["generator"] = Generator(
+        config.llm.model_dump(), config.resume_summary, config.candidate_name
+    )
 
     from src.app import web
 

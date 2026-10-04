@@ -262,7 +262,8 @@ board_map_file: "data/board_map.yaml"            # default
 | `adzuna.app_id` / `adzuna.app_key` | `src/ingestion/planner.py` → `AdzunaScraper` | Implemented. Free from developer.adzuna.com. |
 | `llm.backend` / `llm.model` / `llm.host` | `src/llm/client.py` | Implemented. Only `ollama` valid in the LLM layer; config layer permits extra `llm.*` keys (backend undecided). |
 | `llm.timeout` | `src/llm/client.py` | Implemented. Seconds to wait for one generation (default 600; 0 = no limit). A timed-out call is not retried; an unreachable server still fails within 10 seconds. |
-| `resume_summary` | `src/llm/cli.py` → prompt templates | Implemented; a hand-written string, not parsed from a file. |
+| `resume_summary` | `src/llm/prompts.py` | Implemented; a hand-written string, not parsed from a file. The letters may only claim what it says. |
+| `candidate_name` | `src/llm/prompts.py` | Implemented. Optional name that signs the cover letter and cold email. Unset means no signature line. |
 | `database.url` | `src/storage/database.py` | Wired. See below. |
 
 At least one of `sources`, `sources_file` or `companies_file` must be present,
