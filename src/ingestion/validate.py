@@ -28,8 +28,8 @@ in-scope (public, unauthenticated endpoints) per docs/scrapers.md.
 import argparse
 import logging
 import sys
-from dataclasses import dataclass
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
 
 from src.config import (
     ConfigError,
@@ -46,6 +46,8 @@ from src.logging_config import setup_logging
 
 log = logging.getLogger("jobhunter.validate")
 
+SAMPLE_COUNT = 3
+
 
 @dataclass
 class ValidationResult:
@@ -55,6 +57,9 @@ class ValidationResult:
     total: int  # postings fetched (0 if dead or genuinely empty)
     matched: int  # of those, how many match the filters
     error: Optional[str]  # short reason if not live
+    # (title, location) of the first few postings, so a wrong company is easy to
+    # spot in the resolve report.
+    samples: List[Tuple[str, str]] = field(default_factory=list)
 
     @property
     def status(self) -> str:
@@ -98,7 +103,8 @@ def validate_source(
         )
     matched = sum(1 for j in jobs if job_matches(j, filters))
     return ValidationResult(
-        source, planned.label, live=True, total=len(jobs), matched=matched, error=None
+        source, planned.label, live=True, total=len(jobs), matched=matched, error=None,
+        samples=[(j.title, j.location) for j in jobs[:SAMPLE_COUNT]],
     )
 
 
