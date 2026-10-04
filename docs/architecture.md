@@ -31,6 +31,7 @@ Instead:
 
 - `make scrape` (`src/ingestion/cli.py`) writes `JobPost` rows. New rows have `generated_cover_letter = None` by construction.
 - `make check-links` (`src/ingestion/check_links.py`) picks rows no scrape has seen lately and marks the ones whose link returns 404/410 dead.
+- The one exception: a job's page in the dashboard can generate that job's cover letter or cold email on demand (`src/app/generate.py`, KAN-43). It runs in a background thread per request, holds no database connection during the LLM call, and keeps its in-progress state in memory only, so a restart loses nothing that was saved.
 - `make process` (`src/llm/cli.py`) calls `pending_llm_jobs()` (`src/storage/database.py`) to find rows where `generated_cover_letter IS NULL`, generates materials, writes them back.
 - `make app` (`src/app/`) only ever reads, plus writes status updates (`To Apply` → `Applied` → ...) and jobs you add by hand.
 
