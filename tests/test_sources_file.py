@@ -112,27 +112,6 @@ def test_an_unclosed_quote_in_the_entry_still_reports_the_line(tmp_path):
     assert "line 2" in str(exc.value)
 
 
-def test_a_discover_proposal_works_after_uncommenting_it(tmp_path):
-    # `make discover` writes "# ashby acme    # match: 2 role(s)" and says to
-    # uncomment the ones to keep; that must load, trailing note and all.
-    from src.ingestion.discover import _proposal_lines
-    from src.ingestion.validate import ValidationResult
-
-    results = [
-        ValidationResult(AshbySource(type="ashby", org="airwallex"), "ashby[airwallex]", True, 40, 7, None),
-        ValidationResult(GreenhouseSource(type="greenhouse", board="acme"), "greenhouse[acme]", True, 9, 0, None),
-    ]
-    lines = _proposal_lines(results)
-    proposals = [line for line in lines if line.startswith("# ashby") or line.startswith("# greenhouse")]
-    assert len(proposals) == 2 and "# match: 7 role(s)" in proposals[0]
-    approved = [line[2:] for line in proposals]  # uncomment: drop the leading "# "
-
-    srcs = load_sources_file(_write(tmp_path, "\n".join(approved) + "\n"))
-    assert [(s.type, getattr(s, "org", None) or getattr(s, "board", None)) for s in srcs] == [
-        ("ashby", "airwallex"), ("greenhouse", "acme"),
-    ]
-
-
 def test_the_shipped_example_sources_file_loads():
     from pathlib import Path
 

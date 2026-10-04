@@ -93,9 +93,9 @@ knowing:
   in it, so `source_from_url()` rejects it and asks for the board URL.
 
 Its `job_board_id` is `workable-<sha1(url)[:10]>`, where `url` is
-`https://apply.workable.com/j/<shortcode>`. Not covered: `make discover` does not
-guess Workable accounts (many guessed slugs exist with no openings, which would
-be proposed as "live, no current match"), so add boards by hand.
+`https://apply.workable.com/j/<shortcode>`. A Workable account can be found from a
+company name by `make resolve` (many guessed accounts exist with no openings; they
+are recorded as `empty` and not scraped), or added by hand.
 
 ## Worked example 6: `WorkdayScraper`
 

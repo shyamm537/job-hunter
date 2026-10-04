@@ -57,7 +57,7 @@ job-hunter-ai/
 │   │   ├── filtering.py     # Title/location filters applied to ATS results
 │   │   ├── capture.py       # Dump unfiltered scrape output (debug/fixtures)
 │   │   ├── validate.py      # `make validate` — check board tokens are still live
-│   │   ├── discover.py      # `make discover` — propose new boards from existing postings
+│   │   ├── discover.py      # `make discover` — propose company names from your Adzuna results
 │   │   ├── resolve.py       # `make resolve` — check companies.txt against every board, write the board map
 │   │   ├── board_map.py     # the board map (data/board_map.yaml): load, save, merge
 │   │   ├── check_links.py   # `make check-links` — mark postings whose link is gone (404/410) dead
@@ -185,7 +185,7 @@ make scrape    # populate data/jobs.db with new postings (sources × filters)
 make check-links  # (optional) mark postings whose link is gone dead, and archive them
 make validate  # check your configured boards are still live (tokens go stale)
 make resolve   # (optional) find the boards of the employers in companies.txt
-make discover  # propose new boards from companies already in your results
+make discover  # propose companies to follow from your Adzuna results (then resolve)
 make contacts  # (optional) find a contact for each posting from its own text
 make process   # generate cover letters / cold emails for pending rows
 make app       # serve the dashboard on http://127.0.0.1:8000 and open it
@@ -195,7 +195,7 @@ make app       # serve the dashboard on http://127.0.0.1:8000 and open it
 
 **Adding a job by hand.** Found a role on LinkedIn, SEEK or Naukri? Open **Add a job** at the top of the dashboard and paste its title, company and description (location and URL optional). It's stored with the `manual` source, the next `make process` run writes its cover letter before the scraped backlog, and it's never link-checked (those sites often block logged-out requests).
 
-`validate`, `resolve` and `discover` are maintenance/growth steps, not required every run. `resolve` is the hands-off one: list the employers you want in `companies.txt` and it finds which boards they are on and records them in a board map that `scrape` reads (boards pinned in `sources.txt` always win). See [`docs/board-discovery.md`](docs/board-discovery.md) for how they fit together (list companies → resolve → scrape; or curate candidates → validate → scrape; or mine existing results → discover → review → validate). `check-links` is optional: board postings are already checked by every scrape, so it mostly catches closed Adzuna ads; it checks up to 200 links per run. `contacts` is optional but should run before `process` if you want the cold email addressed to someone. `process` generates `llm.batch_size` cover letters per run (0 = every pending row). On Windows, `run-pipeline.ps1` runs all seven steps in order in one go (with `-SkipApp` to stop before the dashboard); the optional ones warn and carry on if they fail.
+`validate`, `resolve` and `discover` are maintenance/growth steps, not required every run. `resolve` is the hands-off one: list the employers you want in `companies.txt` and it finds which boards they are on and records them in a board map that `scrape` reads (boards pinned in `sources.txt` always win). See [`docs/board-discovery.md`](docs/board-discovery.md) for how they fit together (list companies → resolve → scrape; or curate candidates → validate → scrape; or mine existing results → discover → copy names into companies.txt → resolve). `check-links` is optional: board postings are already checked by every scrape, so it mostly catches closed Adzuna ads; it checks up to 200 links per run. `contacts` is optional but should run before `process` if you want the cold email addressed to someone. `process` generates `llm.batch_size` cover letters per run (0 = every pending row). On Windows, `run-pipeline.ps1` runs all seven steps in order in one go (with `-SkipApp` to stop before the dashboard); the optional ones warn and carry on if they fail.
 
 `make app` takes `--port N` and `--no-browser` if you run it directly: `python -m src.app --port 8001`.
 
@@ -253,7 +253,7 @@ This is being built incrementally. Rough sequence:
 10. `filters` / `sources` split + `sources_file` (plain-text board list, careers-URL auto-detection) (done)
 11. Lever and Ashby scrapers — second and third ATS sources (done)
 12. Adzuna scraper — sanctioned search API, the replacement for the SEEK feed, reaches AU + India (done)
-13. Board validation (`make validate`) and discovery (`make discover`) — keep the board list live and growing without a noise-adding firehose (done)
+13. Board validation (`make validate`), the companies list and board map (`make resolve`), and company discovery (`make discover`) — keep the board list live and growing without a noise-adding firehose (done)
 14. Hiring-contact lookup v1 (`make contacts`) — public, in-posting-text only; shown with a confidence flag in the dashboard (done)
 15. `capture`/`JOBHUNTER_DUMP_DIR` debug dumping of unfiltered scrape output (done)
 16. Dead-posting handling: mark jobs dead when their board drops them, rework the link checker, archive dead rows (done; the "closed" marker for tracked jobs, scheduled checks and a parallel harness are open)
