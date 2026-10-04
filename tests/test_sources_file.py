@@ -41,6 +41,105 @@ def test_parses_sources(tmp_path):
     assert isinstance(srcs[3], AdzunaSource) and srcs[3].country == "in"
 
 
+# --- comments (KAN-39) ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "line, expected",
+    [
+        ("adzuna au   # an Adzuna search", ("adzuna", "au")),
+        ("adzuna in # ... and India", ("adzuna", "in")),
+        ("greenhouse stripe  # a note", ("greenhouse", "stripe")),
+        ("lever figma\t# a tab before the comment", ("lever", "figma")),
+        ("ashby ashby #no space after the hash", ("ashby", "ashby")),
+        ("workable squiz # case-sensitive", ("workable", "squiz")),
+        ("greenhouse stripe #", ("greenhouse", "stripe")),  # an empty comment
+        ("greenhouse stripe # it's a note, with an apostrophe", ("greenhouse", "stripe")),
+        ('greenhouse stripe # and "an unbalanced quote', ("greenhouse", "stripe")),
+    ],
+)
+def test_trailing_comment_after_an_entry_is_ignored(tmp_path, line, expected):
+    (src,) = load_sources_file(_write(tmp_path, line + "\n"))
+    assert src.type == expected[0]
+    assert getattr(src, {"adzuna": "country", "greenhouse": "board", "lever": "company",
+                         "ashby": "org", "workable": "account"}[expected[0]]) == expected[1]
+
+
+def test_trailing_comment_on_a_workday_line_and_a_pasted_url(tmp_path):
+    srcs = load_sources_file(_write(
+        tmp_path,
+        """
+        workday cba wd3 CommBank_Careers   # one site per tenant
+        https://jobs.lever.co/metabase   # a pasted careers URL
+        https://boards.greenhouse.io/stripe#jobs   # a URL fragment is not a comment
+        """,
+    ))
+    assert (srcs[0].tenant, srcs[0].datacenter, srcs[0].site) == ("cba", "wd3", "CommBank_Careers")
+    assert isinstance(srcs[1], LeverSource) and srcs[1].company == "metabase"
+    assert isinstance(srcs[2], GreenhouseSource) and srcs[2].board == "stripe"
+
+
+def test_a_hash_inside_a_token_is_not_a_comment(tmp_path):
+    # "au#x" has no space before the "#", so it stays one token (and is the country).
+    (src,) = load_sources_file(_write(tmp_path, "adzuna au#x\n"))
+    assert src.country == "au#x"
+
+
+def test_whole_line_comments_and_blank_lines_are_still_ignored(tmp_path):
+    srcs = load_sources_file(_write(
+        tmp_path,
+        """
+        # a whole-line comment
+           # an indented one, with a trailing # hash
+        greenhouse stripe
+
+        # greenhouse commented-out  # and a trailing comment on it
+        """,
+    ))
+    assert [s.type for s in srcs] == ["greenhouse"]
+
+
+def test_a_comment_does_not_hide_a_real_error_before_it(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_sources_file(_write(tmp_path, "greenhouse # forgot the token\n"))
+    assert "exactly one board token" in str(exc.value)
+    assert "line 1" in str(exc.value)
+
+
+def test_an_unclosed_quote_in_the_entry_still_reports_the_line(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_sources_file(_write(tmp_path, "greenhouse stripe\nworkday a wd3 \"Site # nope\n"))
+    assert "line 2" in str(exc.value)
+
+
+def test_a_discover_proposal_works_after_uncommenting_it(tmp_path):
+    # `make discover` writes "# ashby acme    # match: 2 role(s)" and says to
+    # uncomment the ones to keep; that must load, trailing note and all.
+    from src.ingestion.discover import _proposal_lines
+    from src.ingestion.validate import ValidationResult
+
+    results = [
+        ValidationResult(AshbySource(type="ashby", org="airwallex"), "ashby[airwallex]", True, 40, 7, None),
+        ValidationResult(GreenhouseSource(type="greenhouse", board="acme"), "greenhouse[acme]", True, 9, 0, None),
+    ]
+    lines = _proposal_lines(results)
+    proposals = [line for line in lines if line.startswith("# ashby") or line.startswith("# greenhouse")]
+    assert len(proposals) == 2 and "# match: 7 role(s)" in proposals[0]
+    approved = [line[2:] for line in proposals]  # uncomment: drop the leading "# "
+
+    srcs = load_sources_file(_write(tmp_path, "\n".join(approved) + "\n"))
+    assert [(s.type, getattr(s, "org", None) or getattr(s, "board", None)) for s in srcs] == [
+        ("ashby", "airwallex"), ("greenhouse", "acme"),
+    ]
+
+
+def test_the_shipped_example_sources_file_loads():
+    from pathlib import Path
+
+    example = Path(__file__).resolve().parent.parent / "sources.txt.example"
+    assert load_sources_file(str(example))  # at least one active source, no errors
+
+
 def test_leftover_seek_line_is_an_unknown_source(tmp_path):
     # SEEK was removed (KAN-32); an old sources.txt still saying `seek` must
     # fail with the line number rather than be silently skipped.

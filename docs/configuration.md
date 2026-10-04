@@ -118,7 +118,8 @@ This trips people up, so to be explicit:
   *where* only; it never carries filters.
 
 Its sources are appended to any inline `sources`. One source per line, blank
-lines and `#` comments ignored. Lines say *where* only (no titles/locations):
+lines and `#` comments ignored (a whole line, or a comment after an entry; a `#`
+must follow a space to start one). Lines say *where* only (no titles/locations):
 
 ```
 adzuna au            # an Adzuna search, driven by filters

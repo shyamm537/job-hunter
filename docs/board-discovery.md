@@ -55,7 +55,8 @@ companies hiring your exact roles. `make discover` (`src/ingestion/discover.py`)
 4. Writes the confirmed-live ones as **commented proposals** to
    `sources.discovered.txt`, matches first.
 
-Nothing is added automatically. You review, uncomment the keepers, and move them
+Nothing is added automatically. You review, uncomment the keepers (the trailing
+`# match: N role(s)` note can stay), and move them
 into `sources.txt`:
 
 ```bash

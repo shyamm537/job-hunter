@@ -158,7 +158,7 @@ posting whose location mentions "remote" always passes (see
 
 `config.yaml`'s `sources_file:` points at a plain-text file of *where* to look,
 parsed by `load_sources_file()` (`src/config.py`) into the same `Source` models
-and appended to inline `sources`. One per line, `#` comments ignored:
+and appended to inline `sources`. One per line, `#` comments ignored (whole-line, or after an entry):
 
 ```
 adzuna au
