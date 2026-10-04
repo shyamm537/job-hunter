@@ -16,7 +16,7 @@ import sys
 
 from src.config import ConfigError, load_config
 from src.llm.client import get_llm_client
-from src.llm.prompts import build_prompt
+from src.llm.prompts import generate_material
 from src.logging_config import setup_logging
 from src.storage.database import (
     count_pending_llm_jobs,
@@ -45,6 +45,7 @@ def main() -> None:
     # built from the validated config rather than re-reading the YAML.
     client = get_llm_client({"llm": config.llm.model_dump()})
     resume_summary = config.resume_summary
+    candidate_name = config.candidate_name
 
     # batch_size == 0 means "no limit" — drain the whole queue.
     limit = config.llm.batch_size or None
@@ -68,12 +69,14 @@ def main() -> None:
                 # email. The client already retries transient failures; if it
                 # still raises, this job is skipped and the batch continues.
                 # A cold email already generated from the dashboard is kept.
-                cover_letter = client.generate(
-                    build_prompt("cover_letter", job, resume_summary)
+                cover_letter = generate_material(
+                    client, "cover_letter", job, resume_summary, candidate_name
                 )
-                cold_email = job.generated_cold_email or client.generate(
-                    build_prompt("cold_email", job, resume_summary)
+                cold_email = job.generated_cold_email or generate_material(
+                    client, "cold_email", job, resume_summary, candidate_name
                 )
+                if not cover_letter or not cold_email:
+                    raise ValueError("the model returned an empty response")
             except KeyboardInterrupt:
                 # Ctrl-C mid-job: discard this job's partial state and stop.
                 # Everything committed before now is already saved.

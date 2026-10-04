@@ -11,11 +11,12 @@ finished generation is already in the database) and any error not yet shown.
 
 import logging
 import threading
+from types import SimpleNamespace
 
 import requests
 
 from src.llm.client import get_llm_client
-from src.llm.prompts import MATERIALS, build_prompt
+from src.llm.prompts import MATERIALS, generate_material
 from src.storage.database import get_job, get_session
 
 log = logging.getLogger("jobhunter.app.generate")
@@ -24,9 +25,10 @@ _GONE = "the job no longer exists (it may have been archived)"
 
 
 class Generator:
-    def __init__(self, llm_settings: dict, resume_summary: str):
+    def __init__(self, llm_settings: dict, resume_summary: str, candidate_name: str = ""):
         self.llm_settings = llm_settings
         self.resume_summary = resume_summary
+        self.candidate_name = candidate_name
         self._lock = threading.Lock()
         self._running: set[tuple[int, str]] = set()
         self._errors: dict[tuple[int, str], str] = {}
@@ -74,8 +76,16 @@ class Generator:
                 job = get_job(session, job_id)
                 if job is None:
                     raise LookupError(_GONE)
-                prompt = build_prompt(kind, job, self.resume_summary)
-            text = get_llm_client({"llm": self.llm_settings}).generate(prompt)
+                # Copy what the prompt needs, so the model call below doesn't
+                # touch a detached database row.
+                snapshot = SimpleNamespace(
+                    title=job.title, company=job.company,
+                    description=job.description, contact_name=job.contact_name,
+                )
+            text = generate_material(
+                get_llm_client({"llm": self.llm_settings}),
+                kind, snapshot, self.resume_summary, self.candidate_name,
+            )
             if not text:
                 raise ValueError("the model returned an empty response")
             with get_session() as session:

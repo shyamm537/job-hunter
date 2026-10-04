@@ -103,7 +103,9 @@ def test_generates_only_that_material_for_that_job(app, client, llm, kind, colum
     assert resp.headers["Location"] == f"/jobs/{job_id}"
     _wait(app)
     row = _row(job_id)
-    assert getattr(row, column) == "Generated text." and getattr(row, other) is None
+    # A cold email always opens with its greeting line.
+    expected = "Hi,\n\nGenerated text." if kind == "cold_email" else "Generated text."
+    assert getattr(row, column) == expected and getattr(row, other) is None
     assert _row(untouched).generated_cover_letter is None
     assert len(llm.prompts) == 1
     assert "Build dashboards." in llm.prompts[0] and "Five years of SQL." in llm.prompts[0]
@@ -113,7 +115,7 @@ def test_regenerate_replaces_the_text(app, client):
     job_id = _seed(generated_cold_email="Old email")
     _generate(client, job_id, "cold_email")
     _wait(app)
-    assert _row(job_id).generated_cold_email == "Generated text."
+    assert _row(job_id).generated_cold_email == "Hi,\n\nGenerated text."
 
 
 def test_page_shows_generating_while_it_runs(app, client):
@@ -213,3 +215,21 @@ def test_a_timeout_says_how_to_raise_the_limit(app, client, llm):
     _wait(app)
     page = client.get(f"/jobs/{job_id}").get_data(as_text=True)
     assert "longer than 600 seconds" in page and "llm.timeout" in page
+
+
+def test_the_configured_name_reaches_the_prompt(tmp_path, monkeypatch, llm):
+    cfg = config.Config.model_validate(
+        {"sources": [{"type": "greenhouse", "board": "acme"}],
+         "database": {"url": f"sqlite:///{tmp_path}/jobs.db"},
+         "candidate_name": "Sam Rowe"}
+    )
+    app = create_app(cfg)
+    app.testing = True
+    try:
+        job_id = _seed()
+        _generate(app.test_client(), job_id, "cover_letter")
+        _wait(app)
+        assert '"Sam Rowe"' in llm.prompts[0]
+    finally:
+        database._database_url = None
+        database._engine = None

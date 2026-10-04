@@ -28,7 +28,9 @@ llm:
 
 ## How prompts get built
 
-`src/llm/prompts.py` has two templates, `COVER_LETTER_TEMPLATE` and `COLD_EMAIL_TEMPLATE`, both plain `.format()` strings taking `title`, `company`, `description`, `resume_summary`. `src/llm/cli.py` is the only caller — it formats both templates per pending job and calls `client.generate()` twice.
+`src/llm/prompts.py` has two templates, `COVER_LETTER_TEMPLATE` and `COLD_EMAIL_TEMPLATE`, both plain `.format()` strings. `build_prompt()` fills them from the job (`title`, `company`, a clipped plain-text `description`, the cold email's greeting) plus `resume_summary` and the optional `candidate_name`. Each template opens with numbered rules: output only the text, no placeholders, claim only what the background says.
+
+Callers use `generate_material()` rather than `client.generate()` directly. It builds the prompt, calls the client, then tidies the reply (`clean_output`): it drops a "Here is..." preamble and a `Subject:` line, and makes the cold email open with its exact greeting. If the reply still holds placeholders such as `[Your Name]`, it asks once more, naming them; if they persist, the text is kept and a warning is logged. Both `src/llm/cli.py` (`make process`) and the dashboard's job page (`src/app/generate.py`) use it, so they behave the same.
 
 ## (TODO) Adding a second backend
 
