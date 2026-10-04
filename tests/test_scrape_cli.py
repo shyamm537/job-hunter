@@ -421,3 +421,28 @@ def test_a_board_row_dropped_by_the_new_rules_is_still_reconciled_as_present(tmp
     (row,) = _rows(db)
     assert row.dead_at is None and row.last_seen_at is not None
     assert _archived(db) == []
+
+
+def test_empty_map_with_companies_file_tells_you_to_run_resolve(tmp_path, monkeypatch, capsys):
+    cfg = config.Config.model_validate(
+        {
+            "companies_file": str(tmp_path / "companies.txt"),
+            "board_map_file": str(tmp_path / "board_map.yaml"),
+        }
+    )
+    monkeypatch.setattr(cli, "load_config", lambda *a, **k: cfg)
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "No sources configured" in err and "make resolve" in err
+
+
+def test_no_resolve_hint_when_companies_file_is_unset(tmp_path, monkeypatch, capsys):
+    sources = tmp_path / "sources.txt"
+    sources.write_text("# nothing\n", encoding="utf-8")
+    cfg = config.Config.model_validate({"sources_file": str(sources)})
+    monkeypatch.setattr(cli, "load_config", lambda *a, **k: cfg)
+    with pytest.raises(SystemExit):
+        cli.main()
+    assert "make resolve" not in capsys.readouterr().err
