@@ -1,8 +1,10 @@
 """Entry point for `make scrape`.
 
 Reads config.yaml, plans concrete scrapes from (sources x filters), runs each,
-and writes new postings into the database. Run this, then `make process` to
-generate materials, then `make app` to view everything.
+and writes new postings into the database. The sources are the pinned ones
+(config.yaml and sources.txt) plus, when `companies_file` is set, the live
+boards in the board map that `make resolve` writes. Run this, then `make process`
+to generate materials, then `make app` to view everything.
 
 Adzuna sources expand into one search per (title, location); ATS boards
 (Greenhouse, Lever, Ashby, Workable, Workday) are scraped whole and then filtered by the same
@@ -49,10 +51,17 @@ def main() -> None:
         config = load_config()
         sources = config.resolved_sources
         if not sources:
+            hint = ""
+            if config.companies_file:
+                hint = (
+                    f" Or list companies in {config.companies_file} and run "
+                    "`make resolve` first: it finds their boards and records "
+                    f"them in {config.board_map_file}."
+                )
             raise ConfigError(
                 "No sources configured: add at least one active line to "
                 f"{config.sources_file or 'sources'} (e.g. 'adzuna au' or "
-                "'greenhouse <board>'). See sources.txt.example."
+                f"'greenhouse <board>'). See sources.txt.example.{hint}"
             )
         filters = config.resolved_filters
         plans = plan_scrapes(sources, filters, adzuna_auth=config.adzuna_auth)

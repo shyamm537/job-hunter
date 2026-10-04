@@ -10,7 +10,10 @@ from src.config import (
     Filters,
     GreenhouseSource,
     LeverSource,
+    WorkdaySource,
     load_config,
+    RESOLVABLE,
+    source_key,
 )
 
 
@@ -179,3 +182,89 @@ def test_board_locations_parse_from_yaml(tmp_path):
 def test_archive_url_defaults_to_unset():
     # Unset means "dead_jobs.db next to the main database" (src/storage/archive.py).
     assert Config.model_validate(MIN).database.archive_url is None
+
+
+def test_resolvable_makes_a_source_of_each_board_type_from_a_token():
+    made = {kind: build("Tok") for kind, build in RESOLVABLE.items()}
+    assert set(made) == {"greenhouse", "lever", "ashby", "workable"}
+    assert all(src.type == kind for kind, src in made.items())
+    assert "workday" not in RESOLVABLE  # needs a URL, not a name
+
+
+def test_source_key_lowercases_the_token_for_every_type_but_keeps_the_source():
+    for kind, build in RESOLVABLE.items():
+        upper, lower = build("Spotify"), build("spotify")
+        assert source_key(upper) == source_key(lower) == (kind, "spotify")
+    # The source keeps the token exactly as written.
+    assert RESOLVABLE["workable"]("Squiz").account == "Squiz"
+
+
+def test_source_key_differs_by_type_and_workday_is_keyed_by_tenant():
+    assert source_key(RESOLVABLE["greenhouse"]("acme")) != source_key(RESOLVABLE["lever"]("acme"))
+    one = WorkdaySource(type="workday", tenant="CBA", datacenter="wd3", site="A")
+    two = WorkdaySource(type="workday", tenant="cba", datacenter="wd3", site="B")
+    assert source_key(one) == source_key(two) == ("workday", "cba")
+
+
+def test_resolve_and_companies_keys_parse(tmp_path):
+    path = _write(
+        tmp_path,
+        """
+        companies_file: "companies.txt"
+        board_map_file: "data/map.yaml"
+        resolve:
+          boards: [greenhouse, workable]
+          recheck_days: 7
+          stale_after: 2
+        """,
+    )
+    cfg = load_config(path)
+    assert cfg.companies_file == "companies.txt"
+    assert cfg.board_map_file == "data/map.yaml"
+    assert cfg.resolve.boards == ["greenhouse", "workable"]
+    assert (cfg.resolve.recheck_days, cfg.resolve.stale_after) == (7, 2)
+
+
+def test_resolve_defaults():
+    cfg = Config.model_validate(MIN)
+    assert cfg.companies_file is None
+    assert cfg.board_map_file == "data/board_map.yaml"
+    assert cfg.resolve.boards == ["greenhouse", "lever", "ashby", "workable"]
+    assert (cfg.resolve.recheck_days, cfg.resolve.stale_after) == (14, 3)
+
+
+def test_companies_file_alone_satisfies_the_source_check():
+    cfg = Config.model_validate({"companies_file": "companies.txt"})
+    assert cfg.pinned_sources == []
+
+
+def test_no_sources_at_all_still_fails():
+    with pytest.raises(ValidationError):
+        Config.model_validate({})
+
+
+def test_unknown_resolve_board_is_a_config_error_listing_the_valid_ones(tmp_path):
+    path = _write(tmp_path, "companies_file: c.txt\nresolve:\n  boards: [greenhouse, taleo]\n")
+    with pytest.raises(ConfigError) as exc:
+        load_config(path)
+    message = str(exc.value)
+    assert "taleo" in message and "workable" in message
+
+
+def test_workday_is_not_a_resolve_board(tmp_path):
+    path = _write(tmp_path, "companies_file: c.txt\nresolve:\n  boards: [workday]\n")
+    with pytest.raises(ConfigError):
+        load_config(path)
+
+
+@pytest.mark.parametrize("bad", ["stale_after: 0", "recheck_days: -1"])
+def test_resolve_numbers_are_range_checked(tmp_path, bad):
+    path = _write(tmp_path, f"companies_file: c.txt\nresolve:\n  {bad}\n")
+    with pytest.raises(ConfigError):
+        load_config(path)
+
+
+def test_unknown_resolve_key_is_rejected(tmp_path):
+    path = _write(tmp_path, "companies_file: c.txt\nresolve:\n  recheck: 3\n")
+    with pytest.raises(ConfigError):
+        load_config(path)

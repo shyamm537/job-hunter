@@ -15,6 +15,8 @@ config.yaml
 .streamlit/
 
 sources.txt
+companies.txt
+data/board_map.yaml
 .Rhistory
 
 # Local working notes; tasks are tracked in Jira (project KAN).

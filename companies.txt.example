@@ -1,0 +1,30 @@
+# Job Hunter AI — companies file (copy to companies.txt, then add
+# `companies_file: "companies.txt"` to config.yaml). One employer per line, with
+# no board named: `make resolve` checks each one against every board type
+# (Greenhouse, Lever, Ashby, Workable) and records where it found a live board in
+# data/board_map.yaml, which `make scrape` reads. Blank lines and #-comments are
+# ignored (a whole line, or a comment after an entry).
+#
+#   Name                       # board tokens are guessed from the name
+#   Name | alias, alias        # after the bar: extra tokens to try, or careers URLs
+#   - <sources line>           # never use this board (for any company)
+#
+# A plain alias is a board token used exactly as written (Workable accounts are
+# case-sensitive); you need one when the token is not the name, e.g. `cba` for
+# Commonwealth Bank. A careers URL is a known board for that company, and is how
+# a Workday board gets in (its data centre and site cannot be guessed from a name).
+#
+# Every board found goes live without approval, so check the report `make
+# resolve` prints (each new board comes with sample postings). If a token turns
+# out to belong to a different company, add a block line for it.
+#
+# A board listed in sources.txt is pinned: it always wins over the map.
+
+Canva
+Atlassian
+Commonwealth Bank | cba, https://cba.wd3.myworkdayjobs.com/CommBank_Careers
+Flinders University | flinders
+Moody's
+
+# Not the Australian AMP: the token `amp` on Ashby is another company.
+- ashby amp

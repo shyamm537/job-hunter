@@ -1,4 +1,4 @@
-.PHONY: setup scrape check-links validate discover contacts process app test lint
+.PHONY: setup scrape check-links validate resolve discover contacts process app test lint
 
 # venv binary dir differs by OS (Windows uses Scripts/, POSIX uses bin/)
 ifeq ($(OS),Windows_NT)
@@ -37,6 +37,13 @@ check-links:
 # clean sources.txt:  python -m src.ingestion.validate sources.candidates.txt --out sources.txt
 validate:
 	python -m src.ingestion.validate
+
+# Check the companies in companies.txt against every board (Greenhouse, Lever,
+# Ashby, Workable) and record where they are in data/board_map.yaml, which
+# `make scrape` reads. Run it by hand; add --dry-run to print without saving.
+# See docs/board-discovery.md.
+resolve:
+	python -m src.ingestion.resolve
 
 # Propose new boards from companies already in your Adzuna results. Writes
 # commented proposals to sources.discovered.txt — review and uncomment to

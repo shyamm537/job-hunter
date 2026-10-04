@@ -55,6 +55,16 @@ sources:
 # sources.txt.example). Its sources are appended to the ones above.
 # sources_file: "sources.txt"
 
+# Optionally list the employers you want to follow (see companies.txt.example)
+# and let `make resolve` find which boards they are on. It writes a board map
+# that `make scrape` reads alongside the sources above; a board you pin in
+# `sources` or sources.txt always wins. Unset = this feature is off.
+# companies_file: "companies.txt"
+# resolve:
+#   boards: [greenhouse, lever, ashby, workable]   # default: all four
+#   recheck_days: 14
+# board_map_file: "data/board_map.yaml"            # default
+
 llm:
   backend: ollama               # only "ollama" is implemented today
   model: llama3                 # must be pulled already: `ollama pull llama3`

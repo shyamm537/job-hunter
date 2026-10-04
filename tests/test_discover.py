@@ -19,9 +19,9 @@ def test_slug_variants_empty_or_all_stopwords():
     assert D.slug_variants("The Group Ltd") == []
 
 
-def test_candidates_cover_three_ats_per_slug():
+def test_candidates_cover_every_resolvable_ats_per_slug():
     cands = D.candidates_for_company("Acme")
-    assert {c.type for c in cands} == {"greenhouse", "lever", "ashby"}
+    assert {c.type for c in cands} == {"greenhouse", "lever", "ashby", "workable"}
     assert all(D._token_of(c) == "acme" for c in cands)
 
 
@@ -29,8 +29,8 @@ def test_new_candidates_skips_already_configured():
     existing = [GreenhouseSource(type="greenhouse", board="acme")]
     already = D.existing_tokens(existing)
     cands = D.new_candidates(["Acme"], already)
-    # greenhouse:acme already configured → only lever + ashby proposed
-    assert {c.type for c in cands} == {"lever", "ashby"}
+    # greenhouse:acme already configured → the other boards proposed
+    assert {c.type for c in cands} == {"lever", "ashby", "workable"}
 
 
 def test_new_candidates_dedups_across_companies():
