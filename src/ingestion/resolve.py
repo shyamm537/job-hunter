@@ -43,7 +43,9 @@ from src.ingestion.board_map import (
     BoardMap,
     CheckResult,
     drop_missing_companies,
+    is_definite_miss,
     is_due,
+    live_sources,
     load_map,
     merge_check,
     save_map,
@@ -52,6 +54,7 @@ from src.ingestion.discover import slug_variants
 from src.ingestion.http_util import REQUEST_DELAY
 from src.ingestion.validate import ValidationResult, validate_source
 from src.logging_config import setup_logging
+from src.storage.database import get_session, init_db, retire_board, set_database_url
 
 log = logging.getLogger("jobhunter.resolve")
 
@@ -69,7 +72,7 @@ class ReportRow:
     status: str  # live / empty / gone / pinned / dead
     postings: int = 0
     matched: int = 0
-    flag: str = ""  # NEW / MOVED / BACK / EMPTY / GONE / NOT FOUND
+    flag: str = ""  # NEW / MOVED / BACK / EMPTY / GONE / NOT FOUND / UNREACHABLE
     samples: List[Tuple[str, str]] = field(default_factory=list)
 
 
@@ -79,6 +82,7 @@ class ResolveOutcome:
     rows: List[ReportRow]
     checked: List[str]  # names of the companies checked
     dropped: List[str]  # names removed from the map (no longer in companies.txt)
+    retired: int = 0  # stored postings retired because their company was removed
 
 
 def candidates_for(
@@ -153,6 +157,12 @@ def _flag(before: Optional[str], after: str, company_has_gone: bool) -> str:
     return ""
 
 
+def _is_missing(validation: ValidationResult) -> bool:
+    """Is a dead board dead because it is not there (a 404 and the like), rather
+    than because it could not be asked (a timeout, a server error)?"""
+    return validation.exception is not None and is_definite_miss(validation.exception)
+
+
 def resolve_company(
     board_map: BoardMap,
     company: Company,
@@ -173,7 +183,11 @@ def resolve_company(
         validations.append(check(source))
 
     results = [
-        CheckResult(v.source, v.live, v.total, v.matched) for v in validations
+        CheckResult(
+            v.source, v.live, v.total, v.matched,
+            inconclusive=not v.live and not _is_missing(v),
+        )
+        for v in validations
     ]
     before = board_map.find_company(company.name)
     updated = merge_check(board_map, company.name, results, now)
@@ -186,11 +200,13 @@ def resolve_company(
         board_before = before.find_board(v.source) if before else None
         board_after = after.find_board(v.source)
         line = source_to_line(v.source)
+        unreachable = not v.live and not _is_missing(v)
         if board_after is None:
             if source_key(v.source) in known_keys:
-                rows.append(ReportRow(company.name, line, "dead", flag="NOT FOUND"))
+                flag = "UNREACHABLE" if unreachable else "NOT FOUND"
+                rows.append(ReportRow(company.name, line, "dead", flag=flag))
             continue
-        flag = _flag(
+        flag = "UNREACHABLE" if unreachable else _flag(
             board_before.status if board_before else None, board_after.status, has_gone
         )
         rows.append(
@@ -205,6 +221,46 @@ def resolve_company(
     return updated, rows
 
 
+COMPANY_REMOVED = "company removed"
+
+
+def removed_boards(
+    before: BoardMap, after: BoardMap, pinned: List[Source]
+) -> List[Source]:
+    """Boards whose stored postings to retire after companies left companies.txt:
+    every board of a dropped company, except one that is pinned in sources.txt or
+    that a company still in the map scrapes."""
+    still_used = {source_key(s) for s in pinned} | {
+        source_key(s) for s in live_sources(after)
+    }
+    boards: List[Source] = []
+    seen = set()
+    for company in before.companies:
+        if after.find_company(company.name) is not None:
+            continue
+        for board in company.boards:
+            source = board.source
+            key = source_key(source)
+            if key not in still_used and key not in seen:
+                seen.add(key)
+                boards.append(source)
+    return boards
+
+
+def retire_in_database(config: Config, sources: List[Source]) -> int:
+    """Retire the stored postings of these boards; returns how many rows. The
+    archive step of the next `make scrape` moves them out."""
+    set_database_url(config.database.url)
+    init_db()
+    retired = 0
+    with get_session() as session:
+        for source in sources:
+            kind, token = source_key(source)
+            retired += retire_board(session, kind, token, COMPANY_REMOVED)
+        session.commit()
+    return retired
+
+
 def run_resolve(
     config: Config,
     *,
@@ -215,9 +271,11 @@ def run_resolve(
     now: Optional[datetime] = None,
     check: Optional[Callable[[Source], ValidationResult]] = None,
     sleep: Callable[[float], None] = time.sleep,
+    retire: Optional[Callable[[Config, List[Source]], int]] = None,
 ) -> ResolveOutcome:
     """The resolve step: load companies.txt and the map, check the due companies,
-    and save the map after each one unless `dry_run`."""
+    and save the map after each one unless `dry_run`. The stored postings of a
+    company removed from companies.txt are retired (not on a dry run)."""
     if not config.companies_file:
         raise ConfigError(
             "companies_file is not set in config.yaml: add `companies_file: "
@@ -237,18 +295,24 @@ def run_resolve(
     if only is not None and only.strip().lower() not in {n.lower() for n in names}:
         raise ConfigError(f"--company {only!r} is not in {config.companies_file}")
 
-    board_map = load_map(config.board_map_file)
-    kept = drop_missing_companies(board_map, names)
+    original = load_map(config.board_map_file)
+    board_map = drop_missing_companies(original, names)
     dropped = [
-        c.name for c in board_map.companies if kept.find_company(c.name) is None
+        c.name for c in original.companies if board_map.find_company(c.name) is None
     ]
-    board_map = kept
+    pinned = config.pinned_sources
+    retired = 0
+    if not dry_run and dropped:
+        # Before anything else is saved: a dropped company is gone from the map
+        # for good, so its rows must be retired now or they stay live forever.
+        retired = (retire or retire_in_database)(
+            config, removed_boards(original, board_map, pinned)
+        )
 
     due = select_due(
         companies_file.companies, board_map, now, config.resolve.recheck_days,
         check_all=check_all, only=only, limit=limit,
     )
-    pinned = config.pinned_sources
     rows: List[ReportRow] = []
     checked: List[str] = []
     for company in due:
@@ -268,7 +332,7 @@ def run_resolve(
     if not dry_run and dropped:
         save_map(board_map, config.board_map_file)
 
-    return ResolveOutcome(board_map, rows, checked, dropped)
+    return ResolveOutcome(board_map, rows, checked, dropped, retired)
 
 
 def format_report(outcome: ResolveOutcome, dry_run: bool = False) -> str:
@@ -304,6 +368,8 @@ def format_report(outcome: ResolveOutcome, dry_run: bool = False) -> str:
         summary += f"; {flags}"
     if outcome.dropped:
         summary += f"; dropped from the map: {', '.join(outcome.dropped)}"
+        if outcome.retired:
+            summary += f" ({outcome.retired} stored posting(s) retired)"
     lines += ["", summary + "."]
     if dry_run:
         lines.append("Dry run: nothing was saved.")

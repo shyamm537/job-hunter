@@ -147,6 +147,9 @@ class CheckResult:
     live: bool  # the board answered; False when it raised (404 and the like)
     postings: int = 0
     matched: int = 0
+    # Dead, but not because the board is missing: a timeout, a connection error
+    # or a server error says nothing about whether the board exists.
+    inconclusive: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +280,7 @@ def merge_check(
     - a board already in the map that is now dead becomes `gone`, and one that
       is already `gone` stays so;
     - a dead board that was never in the map is not recorded;
+    - an inconclusive failure (see `CheckResult`) changes nothing for that board;
     - the company's `needs_check` is cleared and `checked_at` set.
     """
     updated = copy.deepcopy(board_map)
@@ -302,7 +306,7 @@ def merge_check(
                 board.last_live = stamp
                 board.misses = 0
                 board.last_miss_on = None
-        elif board is not None:
+        elif board is not None and not result.inconclusive:
             board.status = "gone"
             board.postings = 0
             board.matched = 0
