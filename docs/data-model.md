@@ -46,7 +46,7 @@ class JobPost(SQLModel, table=True):
 | `contact_email` | `str \| None` | A published address or a flagged guess — never asserted as verified. `None` if none found. |
 | `contact_confidence` | `str \| None` | `"published"` / `"pattern-guess"` / `"none"`. **Also the queue signal:** `pending_contact_jobs()` selects rows where this is null, so a looked-up row (even a miss, set to `"none"`) leaves the queue. Free-text, like `status`. |
 | `dead_at` | `datetime \| None` | Naive UTC. When the posting was found closed; `None` = alive. Set by the scrape (board no longer lists it) or `make check-links` (404/410). The first date is kept if a row is marked dead again; cleared if a scrape returns the posting. |
-| `dead_reason` | `str \| None` | Set with `dead_at`: `"gone from board"`, `"http 404"` or `"http 410"`. Cleared with it. |
+| `dead_reason` | `str \| None` | Set with `dead_at`: `"gone from board"`, `"board retired"` or `"company removed"` (the whole board stopped being scraped), `"http 404"` or `"http 410"`. Cleared with it. |
 | `posted_at` | `datetime \| None` | Naive UTC. The source's own publish date (Greenhouse `first_published`, falling back to `updated_at`; Lever `createdAt`; Ashby `publishedAt`; Workable `published_on`, falling back to `created_at`; Workday `startDate`, from the detail call; Adzuna `created`), or `None` if it doesn't say. Filled in on a later scrape if missing. |
 | `last_seen_at` | `datetime \| None` | Naive UTC. Last time a scrape returned the posting. Board scrapes set it for every listed posting, even ones the filters drop. A recent value keeps the row out of the link-check queue. |
 | `last_checked_at` | `datetime \| None` | Naive UTC. Last time `make check-links` requested the URL, whatever the outcome. |
@@ -83,6 +83,11 @@ A posting is marked dead (`dead_at`, plus a short `dead_reason`) in two ways:
   `<source>-` rows whose `company` is the board token. A failed or empty scrape
   changes nothing. Rows still listed get `last_seen_at`, even when the filters
   drop them, and a dead one is revived.
+- **`"board retired"` / `"company removed"`**: every stored row of a board that
+  stopped being scraped: a mapped board that was not there on `resolve.stale_after`
+  separate days (`make scrape`), or the boards of a company removed from
+  `companies.txt` (`make resolve`). `retire_board()` in
+  `src/storage/database.py`. See [`board-discovery.md`](./board-discovery.md).
 - **`"http 404"` / `"http 410"`**: the link checker (`src/ingestion/check_links.py`),
   for rows no scrape has seen recently. In practice that means Adzuna rows and
   rows from boards no longer in `sources.txt`.

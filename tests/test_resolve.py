@@ -4,6 +4,7 @@ replaced by a fake, so nothing touches the network."""
 from datetime import datetime, timedelta
 
 import pytest
+import requests
 
 from src.config import (
     AshbySource,
@@ -22,6 +23,7 @@ from src.ingestion.board_map import BoardMap
 from src.ingestion.validate import ValidationResult
 
 NOW = datetime(2026, 10, 4, 3, 0, 0)
+GH = GreenhouseSource(type="greenhouse", board="acme")
 ALL_BOARDS = ["greenhouse", "lever", "ashby", "workable"]
 WD = WorkdaySource(type="workday", tenant="cba", datacenter="wd3", site="CommBank_Careers")
 
@@ -30,12 +32,19 @@ def _types(sources):
     return sorted(s.type for s in sources)
 
 
+def _http_error(status):
+    response = requests.Response()
+    response.status_code = status
+    return requests.HTTPError(f"{status} Error", response=response)
+
+
 class FakeBoards:
     """Stands in for validate_source: `live` maps a source line to the number of
     postings it has; anything else is dead. Records every call."""
 
-    def __init__(self, live=None):
+    def __init__(self, live=None, dead_status=404):
         self.live = live or {}
+        self.dead_status = dead_status
         self.calls = []
 
     def __call__(self, source):
@@ -47,7 +56,9 @@ class FakeBoards:
             n = self.live[line]
             samples = [(f"Role {i}", "Adelaide") for i in range(min(n, 3))]
             return ValidationResult(source, line, True, n, 1 if n else 0, None, samples)
-        return ValidationResult(source, line, False, 0, 0, "404")
+        return ValidationResult(
+            source, line, False, 0, 0, "404", exception=_http_error(self.dead_status)
+        )
 
 
 # --- candidates --------------------------------------------------------------
@@ -151,6 +162,7 @@ def _config(tmp_path, companies_text, pinned="", **resolve):
             "sources_file": str(sources),
             "companies_file": str(companies),
             "board_map_file": str(tmp_path / "board_map.yaml"),
+            "database": {"url": f"sqlite:///{tmp_path / 'jobs.db'}"},
             "resolve": resolve,
         }
     )

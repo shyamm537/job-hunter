@@ -701,3 +701,61 @@ def test_reconcile_does_not_commit(db_url, tmp_path):
         session.rollback()
 
     assert _by_id()["greenhouse-1"].dead_at is None
+
+
+# --- retire_board (KAN-41) ----------------------------------------------------
+
+
+def test_retire_board_marks_only_that_boards_live_rows(db):
+    from src.storage.database import BOARD_RETIRED, retire_board
+
+    with get_session() as session:
+        session.add_all([
+            _board_job("greenhouse-1"),
+            _board_job("greenhouse-2", company="Acme"),            # same board, other case
+            _board_job("greenhouse-3", company="other"),           # other board
+            _board_job("lever-4"),                                 # same token, other ATS
+            _board_job("greenhouse-5", dead_at=T1, dead_reason="http 404"),  # already dead
+        ])
+        session.commit()
+        retired = retire_board(session, "greenhouse", "acme", when=NOW)
+        session.commit()
+
+    assert retired == 2
+    rows = _by_id()
+    for job_board_id in ("greenhouse-1", "greenhouse-2"):
+        assert rows[job_board_id].dead_at == NOW
+        assert rows[job_board_id].dead_reason == BOARD_RETIRED == "board retired"
+    assert rows["greenhouse-3"].dead_at is None
+    assert rows["lever-4"].dead_at is None
+    # An already-dead row keeps its first date and reason.
+    assert rows["greenhouse-5"].dead_at == T1
+    assert rows["greenhouse-5"].dead_reason == "http 404"
+
+
+def test_retire_board_takes_a_reason_and_handles_an_unknown_board(db):
+    from src.storage.database import retire_board
+
+    with get_session() as session:
+        session.add(_board_job("workday-1", company="cba"))
+        session.commit()
+        assert retire_board(session, "workday", "CBA", "company removed", when=NOW) == 1
+        assert retire_board(session, "workday", "nobody", when=NOW) == 0
+        session.commit()
+    assert _by_id()["workday-1"].dead_reason == "company removed"
+
+
+def test_a_retired_board_restores_when_it_comes_back(db):
+    """Retired rows are archived like any dead row; a scrape that lists the
+    posting again revives it (reconcile_board clears the dead markers)."""
+    from src.storage.database import retire_board
+
+    with get_session() as session:
+        session.add(_board_job("greenhouse-1"))
+        session.commit()
+        retire_board(session, "greenhouse", "acme", when=T1)
+        session.commit()
+        reconcile_board(session, "greenhouse", "acme", {"greenhouse-1"}, when=NOW)
+        session.commit()
+    row = _by_id()["greenhouse-1"]
+    assert row.dead_at is None and row.dead_reason is None

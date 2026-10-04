@@ -88,6 +88,19 @@ def test_workday_board_validates_and_a_dead_tenant_is_reported_dead():
     assert r.live is False and r.status == "dead" and "422" in r.error
 
 
+def test_a_dead_board_carries_the_exception_that_killed_it():
+    boom = RuntimeError("404 Client Error")
+    with patch("src.ingestion.lever.LeverScraper.scrape", side_effect=boom):
+        r = V.validate_source(LeverSource(type="lever", company="gone"), F)
+    assert r.live is False and r.exception is boom
+
+
+def test_a_live_board_has_no_exception():
+    with patch("src.ingestion.greenhouse.GreenhouseScraper.scrape", return_value=_jobs(("Chef", "Paris"))):
+        r = V.validate_source(GreenhouseSource(type="greenhouse", board="acme"), F)
+    assert r.exception is None and r.samples == [("Chef", "Paris")]
+
+
 def test_kept_filters_to_live_then_to_matching():
     live_match = V.ValidationResult(
         GreenhouseSource(type="greenhouse", board="a"), "a", True, 5, 2, None)

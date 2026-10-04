@@ -60,6 +60,9 @@ class ValidationResult:
     # (title, location) of the first few postings, so a wrong company is easy to
     # spot in the resolve report.
     samples: List[Tuple[str, str]] = field(default_factory=list)
+    # The exception that made the board dead, so a caller can tell "the board
+    # is not there" (a 404) from "I could not ask" (a timeout).
+    exception: Optional[BaseException] = None
 
     @property
     def status(self) -> str:
@@ -100,6 +103,7 @@ def validate_source(
         return ValidationResult(
             source, planned.label, live=False, total=0, matched=0,
             error=type(exc).__name__ + ": " + str(exc)[:160],
+            exception=exc,
         )
     matched = sum(1 for j in jobs if job_matches(j, filters))
     return ValidationResult(

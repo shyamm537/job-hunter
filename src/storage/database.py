@@ -290,6 +290,8 @@ _ID_CHUNK_SIZE = 500
 
 # dead_reason for a board row that its board no longer lists (reconcile_board).
 GONE_FROM_BOARD = "gone from board"
+# dead_reason for a board row whose whole board was retired (retire_board).
+BOARD_RETIRED = "board retired"
 
 
 def _update_jobs(
@@ -353,6 +355,15 @@ def mark_dead(
     )
 
 
+def _board_conditions(source: str, token: str) -> list:
+    """WHERE clauses selecting one board's rows: the `<source>-` rows whose
+    company is the board token, ignoring case."""
+    return [
+        JobPost.job_board_id.like(f"{source}-%"),
+        func.lower(JobPost.company) == token.strip().lower(),
+    ]
+
+
 def reconcile_board(
     session: Session,
     source: str,
@@ -381,8 +392,7 @@ def reconcile_board(
     present = set(present_ids)
     rows = session.exec(
         select(JobPost.id, JobPost.job_board_id, JobPost.dead_at).where(
-            JobPost.job_board_id.like(f"{source}-%"),
-            func.lower(JobPost.company) == token.strip().lower(),
+            *_board_conditions(source, token)
         )
     ).all()
 
@@ -399,6 +409,28 @@ def reconcile_board(
     )
     dead = mark_dead(session, gone_ids, GONE_FROM_BOARD, when=when)
     return seen, revived, dead
+
+
+def retire_board(
+    session: Session,
+    source: str,
+    token: str,
+    reason: str = BOARD_RETIRED,
+    *,
+    when: Optional[datetime] = None,
+) -> int:
+    """Mark every live row of one board dead, because the board itself is no
+    longer scraped (it moved or was removed from the companies list).
+
+    A board that leaves the sources is never scraped again, so reconcile_board
+    never runs for it and its rows would stay live for good. Same row selection
+    as reconcile_board; rows that are already dead keep their first date and
+    reason. The archive step moves them out, and if the board returns,
+    upsert_job restores them from the archive. Does not commit. Returns how
+    many rows were newly marked dead.
+    """
+    ids = session.exec(select(JobPost.id).where(*_board_conditions(source, token))).all()
+    return mark_dead(session, ids, reason, when=when)
 
 
 class LinkCheckItem(NamedTuple):
