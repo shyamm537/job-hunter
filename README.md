@@ -1,6 +1,6 @@
 # Job Hunter AI
 
-A local-first job application pipeline: discover and scrape postings across Adzuna and ATS boards (Greenhouse, Lever, Ashby, Workable), store them in a database, look up a public contact for each posting, generate tailored cover letters and cold emails with a local LLM, and track application status — all from a small local web dashboard.
+A local-first job application pipeline: discover and scrape postings across Adzuna and ATS boards (Greenhouse, Lever, Ashby, Workable, Workday), store them in a database, look up a public contact for each posting, generate tailored cover letters and cold emails with a local LLM, and track application status — all from a small local web dashboard.
 
 No cloud dependency required. Runs on SQLite + Ollama by default. SQLite is the product; Postgres is a documented escape hatch that would need a real test pass before you trusted it (the URL is configurable and the abstraction can speak Postgres, but that path is unverified and no driver is pinned — see [`docs/configuration.md`](docs/configuration.md) and `TODO.md`). A hosted LLM is likewise an open, not-yet-built option.
 
@@ -29,6 +29,7 @@ job-hunter-ai/
 │   │   ├── lever.py         # Lever public board API (ATS)
 │   │   ├── ashby.py         # Ashby public board API (ATS)
 │   │   ├── workable.py      # Workable public widget API (ATS)
+│   │   ├── workday.py       # Workday careers API: POST list + detail per title match (ATS)
 │   │   ├── text_util.py     # html_to_text() for HTML job descriptions
 │   │   ├── adzuna.py        # Adzuna search API — per-country (AU, India, ...)
 │   │   ├── planner.py       # Expands sources × filters → planned scrapes
@@ -68,7 +69,7 @@ job-hunter-ai/
 
 ### Design decisions worth knowing about
 
-**Strategy Pattern for scrapers.** `BaseScraper` is an `abc.ABC` with one required method, `.scrape()`. Each job board gets its own subclass and is a pure fetcher — no DB access, no awareness of filters. Five scrapers exist today (Adzuna, Greenhouse, Lever, Ashby, Workable); adding another is a new file, a config model, and a branch in the planner.
+**Strategy Pattern for scrapers.** `BaseScraper` is an `abc.ABC` with one required method, `.scrape()`. Each job board gets its own subclass and is a pure fetcher — no DB access, no awareness of filters. Six scrapers exist today (Adzuna, Greenhouse, Lever, Ashby, Workable, Workday); adding another is a new file, a config model, and a branch in the planner.
 
 **Filters are separate from sources.** `config.yaml` splits *what* you want (`filters.titles`, `filters.locations`) from *where* you look (`sources` / `sources_file`). Adzuna is a search engine, so each `(title, location)` pair becomes a query. ATS boards (Greenhouse, Lever, Ashby) return a company's whole list, so the same filters are applied to the results afterwards (an optional `filters.board_locations` list can replace `locations` for boards only, for boards that use their own place names). `src/ingestion/planner.py` is what combines the two. See `docs/configuration.md`.
 
@@ -83,7 +84,7 @@ job-hunter-ai/
 LinkedIn and SEEK both prohibit automated scraping in their terms of service and have a track record of legal action against scrapers. This project does **not** include stealth/anti-detection scraping of authenticated pages.
 
 In scope:
-- Official APIs where a job board provides one (Greenhouse, Lever, Ashby, Workable)
+- Official APIs where a job board provides one (Greenhouse, Lever, Ashby, Workable), and the public careers API behind a Workday site (not a published contract; checked against each tenant's `robots.txt`)
 - A sanctioned search API with a free tier (Adzuna)
 - Public, non-authenticated feeds where available
 
@@ -222,11 +223,11 @@ This is being built incrementally. Rough sequence:
 14. Hiring-contact lookup v1 (`make contacts`) — public, in-posting-text only; shown with a confidence flag in the dashboard (done)
 15. `capture`/`JOBHUNTER_DUMP_DIR` debug dumping of unfiltered scrape output (done)
 
-A hosted-LLM config and resume parsing are still deferred — the LLM layer is intentionally left at one backend (Ollama) for now. A Workday scraper is designed but not built ([`docs/workday.md`](docs/workday.md)) — it's a multi-call, POST-based ATS unlike the others, and needs a live-board spike before it's trusted. See [`docs/roadmap.md`](docs/roadmap.md) for the detailed version and `TODO.md` for the working tracker.
+A hosted-LLM config and resume parsing are still deferred — the LLM layer is intentionally left at one backend (Ollama) for now. The Workday scraper is built ([`docs/workday.md`](docs/workday.md)) — a multi-call, POST-based ATS unlike the others, checked against live boards; it needs a careers URL per employer and reads one site per tenant. See [`docs/roadmap.md`](docs/roadmap.md) for the detailed version and `TODO.md` for the working tracker.
 
 ## Documentation
 
-Deeper, module-by-module docs live in [`docs/`](./docs/README.md): architecture, the full data model, a worked-example walkthrough of every scraper, the LLM-provider contract, the complete config reference, board discovery/validation, the hiring-contact-lookup design, a Workday scraper design doc, and manual per-ATS submission notes. Kept updated alongside the code, with `(TODO)` markers on anything not yet decided — though if something here ever looks out of sync with `src/`, trust the code and open an issue (or just fix the doc).
+Deeper, module-by-module docs live in [`docs/`](./docs/README.md): architecture, the full data model, a worked-example walkthrough of every scraper, the LLM-provider contract, the complete config reference, board discovery/validation, the hiring-contact-lookup design, the Workday scraper notes, and manual per-ATS submission notes. Kept updated alongside the code, with `(TODO)` markers on anything not yet decided — though if something here ever looks out of sync with `src/`, trust the code and open an issue (or just fix the doc).
 
 ## License
 

@@ -96,6 +96,33 @@ Its `job_board_id` is `workable-<sha1(url)[:10]>`, where `url` is
 guess Workable accounts (many guessed slugs exist with no openings, which would
 be proposed as "live, no current match"), so add boards by hand.
 
+## Worked example 6: `WorkdayScraper`
+
+`src/ingestion/workday.py`. The fifth ATS source and the chattiest: a POST to
+`https://<tenant>.<dc>.myworkdayjobs.com/wday/cxs/<tenant>/<site>/jobs`, 20
+postings a page, plus an optional detail GET per posting. A board needs three
+values (tenant, data centre, site) that are read off its careers URL, so it is
+always added by hand. Full detail in [`docs/workday.md`](./workday.md); what makes
+it different from the other scrapers:
+
+- **Its list is capped.** A tenant's `total` tops out at 2000 and offsets past
+  that return the first page again, so the scraper raises for a board that large
+  instead of returning a list that only looks complete. It also raises on a short
+  list (fewer unique postings than `total`) and on a posting with no path.
+- **Descriptions cost a request each**, so details are fetched only for postings
+  whose title matches `filters.titles` (the planner passes them in as
+  `detail_titles`), and not at all when no titles are set. Every other posting is
+  still returned, with an empty description. A failed detail call is logged and
+  the posting is kept.
+- **The id is the requisition id, not the URL.** The URL carries location and title
+  slugs that can change; the id key is `<tenant>/<site>/<requisition id>`.
+- **One site per tenant**, because the tenant is the board token.
+- Politeness: it sleeps `REQUEST_DELAY` between requests, and uses `post_json()`.
+
+Known cost: the scraper repeats the detail call for every title match on every
+scrape, because it cannot see the database. It is bounded by the number of title
+matches (8 on a 167-posting board).
+
 Why ATS scrapers and not "a scraper per company": most employers rent an ATS
 (Greenhouse, Lever, Ashby, Workday…) rather than build their own job site. A raw
 careers page is bespoke HTML/JS with no general way to scrape it; an ATS exposes
@@ -147,7 +174,9 @@ ATS and token. See `sources.txt.example` and `docs/configuration.md`.
 ## Scope: what a new scraper is allowed to do
 
 In scope: public, non-authenticated pages/feeds and official public APIs
-(Greenhouse, Lever, Ashby, Workable boards; the Adzuna search API). Out of scope: logging into a site to scrape
+(Greenhouse, Lever, Ashby, Workable, Workday boards; the Adzuna search API). A site
+whose `robots.txt` disallows the paths we need, or that answers with a bot
+challenge, is out of scope: that source is dropped rather than worked around. Out of scope: logging into a site to scrape
 behind auth (rules out a sign-in `LinkedInScraper`), and bypassing CAPTCHAs or
 anti-bot measures. If you fork and go further, that's your call and your risk.
 
@@ -191,10 +220,13 @@ Paste a careers URL and `source_from_url()` detects the ATS + token for you.
 
 ## Rate limiting / politeness
 
-`src/ingestion/http_util.py`'s `get_json()` adds a polite User-Agent and
-retry-with-backoff on transient (connection/timeout/5xx) failures; 4xx is raised
-immediately. The ATS scrapers use it. No shared throttle yet — a future paginating scraper
-would add its own delay.
+`src/ingestion/http_util.py`'s `get_json()` and `post_json()` add a polite
+User-Agent (naming this repository) and retry-with-backoff on transient
+(connection/timeout/5xx) failures; 4xx is raised immediately. The ATS scrapers use
+them. `REQUEST_DELAY` (0.5 s, the same pause the link checker uses) is the shared
+throttle for scrapers that make several requests in a row: Workday sleeps it
+between list pages and between detail calls. The one-request-per-board scrapers
+(Greenhouse, Lever, Ashby, Workable) don't need it.
 
 ## Debugging a scrape (capture)
 

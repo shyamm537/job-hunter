@@ -188,6 +188,29 @@ def test_upsert_with_an_archive_session_restores(dbs):
     assert row.generated_cover_letter == "Dear Acme"
 
 
+def test_restore_through_upsert_fills_an_empty_description_but_keeps_a_stored_one(dbs):
+    _seed(
+        _job(1, description="", dead_at=DEAD, dead_reason="gone from board"),
+        _job(2, description="Original.", dead_at=DEAD, dead_reason="gone from board"),
+    )
+    _move()
+
+    with get_session() as session, get_archive_session() as archive_session:
+        # Read inside the session: a later commit expires earlier row objects.
+        filled, created_1 = database.upsert_job(
+            session, _job(1, description="Fetched later."), archive_session
+        )
+        filled_text = filled.description
+        kept, created_2 = database.upsert_job(
+            session, _job(2, description="Different."), archive_session
+        )
+        kept_text = kept.description
+
+    assert created_1 is False and created_2 is False
+    assert filled_text == "Fetched later."
+    assert kept_text == "Original."
+
+
 @pytest.mark.parametrize(
     "main_url, expected",
     [

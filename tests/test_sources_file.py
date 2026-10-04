@@ -10,6 +10,7 @@ from src.config import (
     GreenhouseSource,
     LeverSource,
     WorkableSource,
+    WorkdaySource,
     load_sources_file,
     source_from_url,
 )
@@ -198,6 +199,106 @@ def test_unknown_type_error_lists_workable(tmp_path):
     with pytest.raises(ConfigError) as exc:
         load_sources_file(_write(tmp_path, "linkedin acme\n"))
     assert "workable" in str(exc.value)
+
+
+def test_workday_line_parses_and_keeps_the_site_case(tmp_path):
+    src = load_sources_file(_write(tmp_path, "workday cba wd3 CommBank_Careers\n"))[0]
+    assert isinstance(src, WorkdaySource)
+    assert (src.tenant, src.datacenter, src.site) == ("cba", "wd3", "CommBank_Careers")
+
+
+@pytest.mark.parametrize(
+    "line", ["workday", "workday cba", "workday cba wd3", "workday cba wd3 Site extra"]
+)
+def test_workday_needs_exactly_three_tokens(tmp_path, line):
+    with pytest.raises(ConfigError) as exc:
+        load_sources_file(_write(tmp_path, line + "\n"))
+    assert "exactly three tokens" in str(exc.value)
+    assert "line 1" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://cba.wd3.myworkdayjobs.com/en-US/CommBank_Careers",
+        "https://cba.wd3.myworkdayjobs.com/CommBank_Careers",  # no locale
+        "cba.wd3.myworkdayjobs.com/CommBank_Careers",  # scheme optional
+        "https://cba.wd3.myworkdayjobs.com/CommBank_Careers/",  # trailing slash
+        "https://CBA.WD3.MyWorkdayJobs.com/en-AU/CommBank_Careers",  # host case-insensitive
+        # a deep posting link still resolves to the site
+        "https://cba.wd3.myworkdayjobs.com/en-US/CommBank_Careers/job/Sydney-CBD-Area/Data-Scientist_REQ1",
+        "https://cba.wd3.myworkdayjobs.com/CommBank_Careers/job/Sydney-CBD-Area/Data-Scientist_REQ1",
+        "https://cba.wd3.myworkdayjobs.com/en-US/CommBank_Careers?q=data",  # query string
+    ],
+)
+def test_source_from_url_workday(url):
+    src = source_from_url(url)
+    assert isinstance(src, WorkdaySource)
+    assert (src.tenant, src.datacenter, src.site) == ("cba", "wd3", "CommBank_Careers")
+
+
+def test_source_from_url_workday_other_data_centres_and_tenants():
+    src = source_from_url("https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite")
+    assert (src.tenant, src.datacenter, src.site) == ("nvidia", "wd5", "NVIDIAExternalCareerSite")
+    src = source_from_url("https://my-co.wd103.myworkdayjobs.com/en-GB/Ext")
+    assert (src.tenant, src.datacenter, src.site) == ("my-co", "wd103", "Ext")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://cba.wd3.myworkdayjobs.com",
+        "https://cba.wd3.myworkdayjobs.com/",
+        "https://cba.wd3.myworkdayjobs.com/en-US",  # a locale and nothing else
+        "https://cba.wd3.myworkdayjobs.com/en-US/",
+    ],
+)
+def test_source_from_url_workday_without_a_site_names_the_expected_form(url):
+    with pytest.raises(ConfigError) as exc:
+        source_from_url(url)
+    assert "could not find the site name" in str(exc.value)
+    assert "<tenant>.<datacenter>.myworkdayjobs.com/<site>" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "cba.myworkdayjobs.com",  # no data centre
+        "cba.wd3.myworkdayjobs.com.evil.test",  # a look-alike
+        "wd3.myworkdayjobs.com",  # no tenant
+        "cba.wd3.myworkdaysite.com",  # a different Workday host form, not covered
+    ],
+)
+def test_workday_look_alike_hosts_are_not_recognised(host):
+    with pytest.raises(ConfigError) as exc:
+        source_from_url(f"https://{host}/Careers")
+    assert "unrecognised careers URL host" in str(exc.value)
+
+
+def test_unrecognised_host_error_lists_the_workday_form():
+    with pytest.raises(ConfigError) as exc:
+        source_from_url("https://example.com/acme")
+    assert "<tenant>.<wdN>.myworkdayjobs.com" in str(exc.value)
+
+
+def test_sources_file_accepts_a_workday_url_and_the_explicit_line(tmp_path):
+    srcs = load_sources_file(_write(
+        tmp_path,
+        """
+        https://cba.wd3.myworkdayjobs.com/en-US/CommBank_Careers
+        workday flinders wd3 flinders_employment
+        """,
+    ))
+    assert [(s.tenant, s.datacenter, s.site) for s in srcs] == [
+        ("cba", "wd3", "CommBank_Careers"),
+        ("flinders", "wd3", "flinders_employment"),
+    ]
+
+
+def test_unknown_type_error_lists_workday(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_sources_file(_write(tmp_path, "linkedin acme\n"))
+    assert "workday" in str(exc.value)
 
 
 def test_source_from_url_unknown_host_raises():

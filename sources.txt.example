@@ -13,6 +13,7 @@
 #   lever <token>
 #   ashby <token>
 #   workable <account>   # case-sensitive: the part after apply.workable.com/
+#   workday <tenant> <datacenter> <site>   # three tokens, e.g. cba wd3 CommBank_Careers
 #
 # Or just paste the board's careers URL — the type + token are auto-detected:
 #   https://boards.greenhouse.io/<token>      # → greenhouse <token>
@@ -21,6 +22,9 @@
 #   https://jobs.ashbyhq.com/<token>          # → ashby <token>
 #   https://apply.workable.com/<account>      # → workable <account> (the board,
 #                                             #   not a single posting's /j/ link)
+#   https://<tenant>.<wdN>.myworkdayjobs.com/<site>   # → workday <tenant> <wdN> <site>
+#                                             #   (a leading en-US etc. is skipped;
+#                                             #   one site per tenant)
 
 adzuna au
 adzuna in

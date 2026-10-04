@@ -4,7 +4,7 @@
 
 # ── What you're looking for ─────────────────────────────────────────────────
 # Shared across every source. For Adzuna, titles x locations become searches.
-# For ATS boards (Greenhouse/Lever/Ashby/Workable), they filter the fetched postings.
+# For ATS boards (Greenhouse/Lever/Ashby/Workable/Workday), they filter the fetched postings.
 # Empty lists mean "no filter". A posting in a "remote" location always passes
 # the location filter.
 filters:
@@ -19,7 +19,7 @@ filters:
   # board_locations: ["Adelaide", "SA", "Bedford Park", "Sydney"]
 
 # ── Where to look ───────────────────────────────────────────────────────────
-# Sources are just "where". ATS boards (greenhouse/lever/ashby/workable) are global —
+# Sources are just "where". ATS boards (greenhouse/lever/ashby/workable/workday) are global —
 # they return a company's whole list and the location filter above keeps the
 # ones you want, so non-AU roles (e.g. India: "Bangalore", "Mumbai") come
 # through here. Adzuna is per-country: each location is searched only under
@@ -33,6 +33,10 @@ sources:
     org: "ashby"                     # token in jobs.ashbyhq.com/ashby
   - type: workable
     account: "squiz"                 # in apply.workable.com/squiz (case-sensitive)
+  - type: workday                    # all three come from the careers URL, e.g.
+    tenant: "cba"                    #   https://cba.wd3.myworkdayjobs.com/en-US/CommBank_Careers
+    datacenter: "wd3"                # one site per tenant
+    site: "CommBank_Careers"
   - type: adzuna
     country: "au"                    # one per country; needs the adzuna: creds below
 

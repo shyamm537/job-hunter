@@ -18,9 +18,11 @@ greenhouse acme
 lever acme
 ashby acme
 workable acme                             # case-sensitive: as in apply.workable.com/acme
+workday acme wd3 Careers                  # tenant, data centre, site (3 tokens)
 https://job-boards.greenhouse.io/acme     # pasted URL → auto-detected
 https://jobs.lever.co/acme
 https://jobs.ashbyhq.com/acme
+https://acme.wd3.myworkdayjobs.com/en-US/Careers   # Workday: locale optional
 https://apply.workable.com/acme           # the board URL; a single posting's
                                           # apply.workable.com/j/<code> link is rejected
 ```
@@ -34,9 +36,11 @@ make validate                  # checks everything your config resolves
 Workable boards are manual-only too: `make discover` does not guess Workable
 accounts (it still checks only Greenhouse, Lever and Ashby), so add them by hand.
 
-Workday boards are **manual-only** for now: their data-center subdomain (`wd5`)
-isn't derivable from a name, so they can only be added from a pasted careers URL
-once the Workday scraper exists (see [`docs/workday.md`](./workday.md)).
+Workday boards are **manual-only**: their data-center subdomain (`wd5`) isn't
+derivable from a name, so they can only be added from a pasted careers URL
+(`https://cba.wd3.myworkdayjobs.com/en-US/CommBank_Careers`) or the three-token form
+(`workday cba wd3 CommBank_Careers`). See [`docs/workday.md`](./workday.md) for the
+limits (one site per tenant, boards of 2,000+ postings can't be read).
 
 ## 2. Discovery from your Adzuna results (`make discover`)
 
