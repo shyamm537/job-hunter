@@ -30,22 +30,11 @@ Manually tracking job applications across spreadsheets and tabs doesn't scale pa
 
 ## Status
 
-As of 2026-10-04. The tracker of record is the Jira project `KAN`; `TODO.md` is a local, gitignored working file that mirrors it.
+As of 2026-10-04. Progress is tracked in the Jira project `KAN`.
 
-**Works today**
-- **Scrape:** six sources: Adzuna (a search API, Australia and India) and five ATS boards (Greenhouse, Lever, Ashby, Workable, Workday). Boards are filtered after fetching by title and location; `filters.board_locations` lets a board's own place names be matched without adding Adzuna searches.
-- **Keep it current:** a scrape marks postings dead when their board stops listing them; `make check-links` catches closed Adzuna ads; dead postings move to an archive database and are restored if they return.
-- **Use it:** a local Flask dashboard with a triage view (To Apply queue, New and unread markers, one-click "Not interested", add a job by hand), plus cover letters and cold emails from a local LLM (Ollama) and a conservative, in-posting-text contact lookup.
-- **Quality gates:** 489 tests, lint, and CI on every pull request.
-
-**Not done yet**
-- **Cutting noise at ingest** (KAN-37): Adzuna results are not title-filtered, there is no exclude list, and "remote" passes for any country.
-- **Letter quality:** the prompt uses a short resume summary, and a small local model is slow (`llm.batch_size` is 1).
-- **Closed marker for tracked jobs** (KAN-28), scheduled runs (KAN-31), a parallel link-check harness (KAN-30), and a hosted-LLM option (KAN-19).
-- **No Workable or Workday employers are configured by default.** Both are ready; add an employer's careers URL to `sources.txt` (see [`docs/workday.md`](docs/workday.md) and [`docs/scrapers.md`](docs/scrapers.md)). Workday has limits: one site per tenant, and boards of 2,000 or more postings can't be read.
-
-**Looked at and dropped**
-- **SmartRecruiters:** its API host's `robots.txt` disallows every crawler except one. **PageUp** employers in Adelaide: one disallows everything, one answers with a bot challenge, two use a different front end. Neither was worked around.
+- **Works:** scraping six sources (Adzuna plus Greenhouse, Lever, Ashby, Workable and Workday boards), keeping postings current as they close, a local dashboard for triaging and tracking applications, and cover letters and cold emails from a local LLM.
+- **Not yet:** cutting noise from the results, better cover letters, scheduled runs and a hosted-LLM option. No Workable or Workday employers are configured yet.
+- **Dropped:** SmartRecruiters and some PageUp employers, because their sites don't allow scraping.
 
 ## Architecture
 
