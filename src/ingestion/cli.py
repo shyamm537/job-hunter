@@ -25,8 +25,18 @@ as a source of fixtures for tests.
 
 import logging
 import sys
+from typing import List, Tuple
 
-from src.config import ConfigError, load_config
+from sqlmodel import Session
+
+from src.config import Config, ConfigError, load_config, source_key
+from src.ingestion.board_map import (
+    BoardKey,
+    Outcome,
+    apply_scrape_outcomes,
+    load_map,
+    save_map,
+)
 from src.ingestion.capture import dump_jobs, resolve_dump_dir
 from src.ingestion.filtering import job_matches
 from src.ingestion.planner import plan_scrapes
@@ -37,11 +47,51 @@ from src.storage.database import (
     init_db,
     reconcile_board,
     record_scrape_run,
+    retire_board,
     set_database_url,
     upsert_job,
+    utcnow,
 )
 
 log = logging.getLogger("jobhunter.scrape")
+
+
+def update_board_map(
+    config: Config, session: Session, outcomes: List[Tuple[BoardKey, Outcome]]
+) -> None:
+    """Tell the board map how each board scrape ended (plans/05, stage 2).
+
+    Only boards that came from the map are affected (apply_scrape_outcomes
+    skips the pinned ones). A mapped board that gave a definite "not here" on
+    `resolve.stale_after` separate days becomes `gone`: its stored rows are
+    retired here, so the archive step that follows moves them out, and its
+    company is flagged for the next `make resolve`. Does nothing when
+    `companies_file` is unset.
+    """
+    if not config.companies_file or not outcomes:
+        return
+    try:
+        board_map = load_map(config.board_map_file)
+        pinned = {source_key(source) for source in config.pinned_sources}
+        updated, retire = apply_scrape_outcomes(
+            board_map, outcomes, config.resolve.stale_after, utcnow(), pinned
+        )
+    except ConfigError as exc:
+        log.error("board map not updated: %s", exc)
+        return
+
+    for source in retire:
+        kind, token = source_key(source)
+        retired = retire_board(session, kind, token)
+        log.warning(
+            "%s[%s] was not there on %d separate days: marked gone in the board "
+            "map, %d stored posting(s) retired. Run `make resolve` to look for the "
+            "company on other boards.",
+            kind, token, config.resolve.stale_after, retired,
+        )
+    session.commit()  # the rows first: if saving the map fails, they are not stranded live
+    if updated != board_map:
+        save_map(updated, config.board_map_file)
 
 
 def main() -> None:
@@ -84,6 +134,8 @@ def main() -> None:
     total_seen = 0
     total_new = 0
     total_gone = 0
+    # How each board scrape ended, for the board map (see update_board_map).
+    outcomes: List[Tuple[BoardKey, Outcome]] = []
 
     with get_session() as session, get_archive_session() as archive_session:
         # Jobs first stored from here on are "new" in the dashboard.
@@ -93,6 +145,8 @@ def main() -> None:
                 jobs = plan.scraper.scrape()  # unfiltered
             except Exception as exc:  # noqa: BLE001 - one bad source shouldn't kill the run
                 log.error("scrape failed for %s: %s", plan.label, exc)
+                if plan.board:
+                    outcomes.append((plan.board, exc))
                 continue
 
             if dump_dir:
@@ -100,6 +154,8 @@ def main() -> None:
 
             unfiltered = jobs
             fetched = len(jobs)
+            if plan.board:
+                outcomes.append((plan.board, fetched))
             if plan.post_filter:
                 jobs = [
                     job for job in jobs
@@ -136,6 +192,7 @@ def main() -> None:
             else:
                 log.info("%s: %d posting(s), %d new%s", plan.label, kept, new_here, gone_note)
 
+        update_board_map(config, session, outcomes)
         archived = archive_dead_jobs(session, archive_session)
 
     log.info(
