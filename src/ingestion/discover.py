@@ -14,7 +14,7 @@ surfaces companies you don't already have a board for — mining your Greenhouse
 Lever rows would just re-derive tokens already in sources.txt.
 
 What it can and can't do, honestly: it guesses a board token from the company
-name (slugified) and checks Greenhouse/Lever/Ashby. When the token equals the
+name (slugified) and checks Greenhouse/Lever/Ashby/Workable. When the token equals the
 name slug it works; when it doesn't (or the company is on Workday, whose
 data-center subdomain isn't derivable from a name — see docs/workday.md) it
 misses. Every proposal is validated, so there are no false positives; there are
@@ -33,11 +33,9 @@ from typing import List, Optional, Set
 from sqlmodel import select
 
 from src.config import (
-    AshbySource,
+    RESOLVABLE,
     ConfigError,
     Filters,
-    GreenhouseSource,
-    LeverSource,
     Source,
     load_config,
     source_to_line,
@@ -56,7 +54,9 @@ _STOPWORDS = {
     "gmbh", "ag", "technologies", "technology", "labs", "global",
 }
 
-ATS_TOKEN_FIELD = {"greenhouse": "board", "lever": "company", "ashby": "org"}
+ATS_TOKEN_FIELD = {
+    "greenhouse": "board", "lever": "company", "ashby": "org", "workable": "account",
+}
 
 
 def slug_variants(name: str) -> List[str]:
@@ -86,14 +86,14 @@ def slug_variants(name: str) -> List[str]:
 def candidates_for_company(name: str) -> List[Source]:
     """Every (slug × ATS) candidate Source for a company name.
 
-    Workday is intentionally excluded: its data-center subdomain isn't derivable
-    from a name, so it can only be added from a pasted URL (see docs/workday.md).
+    The boards are the ones in `RESOLVABLE`. Workday is intentionally excluded:
+    its data-center subdomain isn't derivable from a name, so it can only be
+    added from a pasted URL (see docs/workday.md).
     """
     out: List[Source] = []
     for slug in slug_variants(name):
-        out.append(GreenhouseSource(type="greenhouse", board=slug))
-        out.append(LeverSource(type="lever", company=slug))
-        out.append(AshbySource(type="ashby", org=slug))
+        for make_source in RESOLVABLE.values():
+            out.append(make_source(slug))
     return out
 
 

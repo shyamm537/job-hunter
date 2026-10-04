@@ -10,7 +10,10 @@ from src.config import (
     Filters,
     GreenhouseSource,
     LeverSource,
+    WorkdaySource,
     load_config,
+    RESOLVABLE,
+    source_key,
 )
 
 
@@ -179,3 +182,25 @@ def test_board_locations_parse_from_yaml(tmp_path):
 def test_archive_url_defaults_to_unset():
     # Unset means "dead_jobs.db next to the main database" (src/storage/archive.py).
     assert Config.model_validate(MIN).database.archive_url is None
+
+
+def test_resolvable_makes_a_source_of_each_board_type_from_a_token():
+    made = {kind: build("Tok") for kind, build in RESOLVABLE.items()}
+    assert set(made) == {"greenhouse", "lever", "ashby", "workable"}
+    assert all(src.type == kind for kind, src in made.items())
+    assert "workday" not in RESOLVABLE  # needs a URL, not a name
+
+
+def test_source_key_lowercases_the_token_for_every_type_but_keeps_the_source():
+    for kind, build in RESOLVABLE.items():
+        upper, lower = build("Spotify"), build("spotify")
+        assert source_key(upper) == source_key(lower) == (kind, "spotify")
+    # The source keeps the token exactly as written.
+    assert RESOLVABLE["workable"]("Squiz").account == "Squiz"
+
+
+def test_source_key_differs_by_type_and_workday_is_keyed_by_tenant():
+    assert source_key(RESOLVABLE["greenhouse"]("acme")) != source_key(RESOLVABLE["lever"]("acme"))
+    one = WorkdaySource(type="workday", tenant="CBA", datacenter="wd3", site="A")
+    two = WorkdaySource(type="workday", tenant="cba", datacenter="wd3", site="B")
+    assert source_key(one) == source_key(two) == ("workday", "cba")

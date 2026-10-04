@@ -387,6 +387,42 @@ def source_from_url(url: str, where: str = "url") -> Source:
 
 
 
+# Board types a company name can be checked against: board type -> how a bare
+# token becomes a Source. Workday is not here: its data centre and site cannot
+# be guessed from a name, so it enters only from a pasted careers URL. Adding a
+# board type that resolves from a name is one line here.
+RESOLVABLE = {
+    "greenhouse": lambda token: GreenhouseSource(type="greenhouse", board=token),
+    "lever": lambda token: LeverSource(type="lever", company=token),
+    "ashby": lambda token: AshbySource(type="ashby", org=token),
+    "workable": lambda token: WorkableSource(type="workable", account=token),
+}
+
+
+def source_key(source: Source) -> Tuple[str, str]:
+    """Identity of a source for de-duplication: (type, token), lower-cased.
+
+    The token is lower-cased for every type, because `reconcile_board()` lower-
+    cases the company for every board: two boards whose tokens differ only in
+    case are one board to the database. The source itself keeps its token as
+    written (platforms differ on case: Lever and Workable are case-sensitive).
+    A Workday board is identified by its tenant alone (one site per tenant).
+    """
+    if source.type == "greenhouse":
+        return (source.type, source.board.lower())
+    if source.type == "lever":
+        return (source.type, source.company.lower())
+    if source.type == "ashby":
+        return (source.type, source.org.lower())
+    if source.type == "workable":
+        return (source.type, source.account.lower())
+    if source.type == "workday":
+        return (source.type, source.tenant.lower())
+    if source.type == "adzuna":
+        return (source.type, source.country)
+    raise ValueError(f"Unknown source type: {source.type!r}")
+
+
 def source_to_line(source: Source) -> str:
     """Serialise a Source back to a sources-file line — the inverse of
     `_source_from_line`. Used by the board validator to write a clean
