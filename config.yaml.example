@@ -63,6 +63,7 @@ sources:
 # resolve:
 #   boards: [greenhouse, lever, ashby, workable]   # default: all four
 #   recheck_days: 14
+#   stale_after: 3      # separate days a mapped board must be missing before it is retired
 # board_map_file: "data/board_map.yaml"            # default
 
 llm:

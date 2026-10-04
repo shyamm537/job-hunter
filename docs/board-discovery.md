@@ -50,7 +50,7 @@ companies_file: "companies.txt"     # unset = the whole feature is off
 resolve:
   boards: [greenhouse, lever, ashby, workable]   # default: every resolvable type
   recheck_days: 14      # placeholder until the maintenance cycle is decided
-  stale_after: 3        # not used yet: for noticing a move during a scrape (planned)
+  stale_after: 3        # separate days of "not here" before a mapped board is gone
 # board_map_file: "data/board_map.yaml"          # default
 ```
 
@@ -83,7 +83,8 @@ What a run does:
    from). Every company is checked against every board and all live boards are
    kept; it does not stop at the first hit.
 6. Prints a report, one row per board with a flag (`NEW`, `MOVED`, `BACK`,
-   `EMPTY`, `GONE`, `NOT FOUND` for a URL alias that did not answer). Each new
+   `EMPTY`, `GONE`, `NOT FOUND` for a URL alias that did not answer, `UNREACHABLE`
+   for a board that could not be asked). Each new
    board is followed by three sample postings, so a wrong company stands out.
 
 **New matches go live without approval.** This replaces the old
@@ -117,17 +118,48 @@ is one config value that work can change.
   group.
 - **Empty is ambiguous.** An empty Workable account can be a real employer with
   no openings or an abandoned account. Either way it is not scraped.
-- **A failed check marks a mapped board `gone`.** The resolve step cannot tell a
-  timeout from a missing board, so a transient failure during a check can mark a
-  live mapped board `gone` until that company is checked again (`--company`
-  fixes it at once). The planned scrape-time check will count only definite
-  answers (404, 410, 422 or no postings), at most once a day.
-- **Moves are not noticed during a scrape yet.** For now a board that dies keeps
-  its stored rows, and a company that moves boards is picked up only
-  at its next due check.
-- **Don't run `make resolve` and `make scrape` at the same time** once the
-  scrape also writes the map (planned); the atomic save prevents a broken file,
-  not a lost update.
+- **A move is noticed after `stale_after` days, and only if the old board dies
+  or empties.** A company that leaves its old board up and populated looks fine
+  until its next routine re-check (`recheck_days`) finds the second board.
+- **A returning board only restores matching rows.** When a retired board comes
+  back, an archived posting is restored only if it passes your filters; the rest
+  stay in the archive.
+- **A move starts again from scratch.** The postings on the new board are new
+  rows with new ids, so status and generated letters do not carry over.
+- **Don't run `make resolve` and `make scrape` at the same time.** Both rewrite
+  `board_map.yaml`. The atomic save prevents a broken file, not a lost update.
+
+### Noticing a move
+
+`make scrape` tells the map how each mapped board answered. For a board that
+came from the map (never a pinned one):
+
+- **postings returned**: the board's miss count goes back to 0.
+- **a definite "not here"**: an HTTP 404, 410 or 422, or a scrape that returned
+  no postings. This counts as one miss, **at most once per board per calendar
+  day (UTC)**. After `resolve.stale_after` such days in a row the board becomes
+  `gone`: it is no longer scraped, its stored postings are retired (marked dead
+  with the reason `board retired`, then moved to the archive like any dead
+  posting), and its company is flagged so the next `make resolve` checks it
+  against every board again. If it turns up elsewhere the report says `MOVED`.
+- **anything else is not a miss**: a timeout, a connection error, a server
+  error, or a scraper's own error (such as a Workday board over its 2,000
+  posting limit). The scrape logs it and leaves the counts alone, so one
+  platform being down for a week retires nothing.
+
+Because only a definite answer counts, and only once a day, three scrapes in one
+afternoon never retire a board: `gone` means three separate days of the board
+saying it is not there.
+
+`make resolve` follows the same rule when it re-checks: a board that answers
+404, 410 or 422 (or has no postings) is marked `gone` or `empty`, while one that
+could not be asked (flagged `UNREACHABLE` in the report) keeps its status.
+
+**Removing a company.** Deleting a company from `companies.txt` drops it from the
+map at the next `make resolve`, and the stored postings of its boards are
+retired (reason `company removed`; not on `--dry-run`). A board that is also
+pinned in `sources.txt`, or that another company in the map still uses, is left
+alone.
 
 ## 2. Adding a board by hand (always available)
 

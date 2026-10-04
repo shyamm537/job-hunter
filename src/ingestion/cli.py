@@ -14,7 +14,9 @@ titles and locations. Each planned scrape runs independently — one failing
 A board scrape returns the board's whole list, so after it the board's stored
 rows are compared with it (reconcile_board): rows the board no longer lists
 are marked dead ("gone from board"), the rest are marked seen. A failed or
-empty scrape skips that step. At the end, dead postings are moved to the
+empty scrape skips that step. Boards that came from the board map also report
+how they ended (update_board_map): one that is definitely not there on several
+separate days is marked gone and its rows are retired. At the end, dead postings are moved to the
 archive (src/storage/archive.py), and an archived posting a scrape returns
 again is restored from it.
 

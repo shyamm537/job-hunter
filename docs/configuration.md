@@ -219,7 +219,7 @@ companies_file: "companies.txt"     # unset = the whole feature is off
 resolve:
   boards: [greenhouse, lever, ashby, workable]   # default: every resolvable type
   recheck_days: 14      # a company is checked again after this many days
-  stale_after: 3        # reserved for noticing a move during a scrape (not used yet)
+  stale_after: 3        # separate days of "not here" before a mapped board is gone
 board_map_file: "data/board_map.yaml"            # default
 ```
 
@@ -258,7 +258,7 @@ board_map_file: "data/board_map.yaml"            # default
 | `sources_file` | `src/config.py` → `load_sources_file()` | Implemented. Appended to inline `sources`. |
 | `companies_file` | `src/config.py` → `load_companies_file()`, `src/ingestion/resolve.py` | Implemented. Optional; employers whose boards `make resolve` finds. Unset = feature off. |
 | `board_map_file` | `src/ingestion/board_map.py` | Implemented. Default `data/board_map.yaml`; generated, do not edit. |
-| `resolve.boards` / `resolve.recheck_days` / `resolve.stale_after` | `src/ingestion/resolve.py` | `boards` and `recheck_days` implemented; `stale_after` is reserved. |
+| `resolve.boards` / `resolve.recheck_days` / `resolve.stale_after` | `src/ingestion/resolve.py` | Implemented. `stale_after` is how many separate days of a definite "not here" retire a mapped board during `make scrape`. |
 | `adzuna.app_id` / `adzuna.app_key` | `src/ingestion/planner.py` → `AdzunaScraper` | Implemented. Free from developer.adzuna.com. |
 | `llm.backend` / `llm.model` / `llm.host` | `src/llm/client.py` | Implemented. Only `ollama` valid in the LLM layer; config layer permits extra `llm.*` keys (backend undecided). |
 | `resume_summary` | `src/llm/cli.py` → prompt templates | Implemented; a hand-written string, not parsed from a file. |
