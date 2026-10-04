@@ -11,9 +11,30 @@ No cloud dependency required. Runs on SQLite + Ollama by default. SQLite is the 
 > from other origins, so a web page you visit can't change your data. There's
 > no login; further hardening is tracked in `TODO.md`.
 
+## About this project
+
+**The main aim of this project is to learn how to build something using an AI tool.** It is a learning project first and a job-hunting tool second: a real, end-to-end problem to build against with an AI coding assistant (Claude Code), so the habits get practised on something that has to actually work. The job hunt is the excuse; the working method is the point.
+
+What that has meant in practice:
+
+- **Plan first, then build.** Each new source (Workable, Workday, and two that were dropped) started as a written plan, was tested against the live service with a small probe before any code was written, and only then built. The plans were reviewed more than once, and the reviews caught real bugs (an id rule that would have collapsed every posting on a board into one, a location filter that would have dropped every Adelaide role) before they reached `main`.
+- **One change, one ticket, one pull request.** Every change has a Jira key (project `KAN`), a branch named after it, small commits prefixed with the key, and a pull request that CI (lint and tests) has to pass before it is merged by a person. The AI proposes and writes; a person decides and merges.
+- **Check the work, don't trust it.** New code is tested offline and then run against the real service in a scratch database before the PR is opened. Claims in the plans are marked as seen live, documented, or from memory. Where something could not be verified it says so in the docs (for example `docs/workday.md`).
+- **Rules the AI has to follow.** Scope limits (see below), no emojis in PRs or comments, and a source whose `robots.txt` disallows scraping is dropped rather than worked around.
+
+If you are reading this to learn the same thing, `docs/` and the pull-request history are the best record of how the work went.
+
 ## Why this exists
 
 Manually tracking job applications across spreadsheets and tabs doesn't scale past a handful of roles. This project treats the job hunt as a small data pipeline: ingest postings from several sources, persist them with a defined schema, optionally look up a contact, generate application materials, and track status through a lifecycle (`To Apply` → `Applied` → `Interviewing` → `Rejected`).
+
+## Status
+
+As of 2026-10-04. Progress is tracked in the Jira project `KAN`.
+
+- **Works:** scraping six sources (Adzuna plus Greenhouse, Lever, Ashby, Workable and Workday boards), keeping postings current as they close, a local dashboard for triaging and tracking applications, and cover letters and cold emails from a local LLM.
+- **Not yet:** cutting noise from the results, better cover letters, scheduled runs and a hosted-LLM option. No Workable or Workday employers are configured yet.
+- **Dropped:** SmartRecruiters and some PageUp employers, because their sites don't allow scraping.
 
 ## Architecture
 
@@ -38,7 +59,7 @@ job-hunter-ai/
 │   │   ├── validate.py      # `make validate` — check board tokens are still live
 │   │   ├── discover.py      # `make discover` — propose new boards from existing postings
 │   │   ├── check_links.py   # `make check-links` — mark postings whose link is gone (404/410) dead
-│   │   ├── http_util.py     # Shared GET-with-retries helper
+│   │   ├── http_util.py     # Shared GET/POST-with-retries helpers, REQUEST_DELAY
 │   │   └── cli.py           # `make scrape` — runs every planned scrape
 │   ├── contacts/            # Hiring-contact lookup (public, in-posting text only)
 │   │   ├── extract.py       # Pure function: JobPost -> ContactResult
@@ -46,7 +67,8 @@ job-hunter-ai/
 │   ├── storage/             # ORM + migrations
 │   │   ├── models.py        # SQLModel schema (JobPost, incl. contact_* and dead-posting columns)
 │   │   ├── database.py      # Connection handling, CRUD, DB-URL resolution, additive SQLite column migration
-│   │   └── archive.py       # Dead postings move to data/dead_jobs.db (kept for analysis)
+│   │   ├── archive.py       # Dead postings move to data/dead_jobs.db (kept for analysis)
+│   │   └── adzuna_rekey.py  # One-off re-key of legacy Adzuna rows (`python -m src.storage.adzuna_rekey`)
 │   ├── llm/                 # LLM abstraction layer
 │   │   ├── client.py        # Wraps Ollama / Llama.cpp / OpenAI behind one interface
 │   │   └── prompts.py       # Prompt templates for cover letters, cold emails
@@ -71,7 +93,7 @@ job-hunter-ai/
 
 **Strategy Pattern for scrapers.** `BaseScraper` is an `abc.ABC` with one required method, `.scrape()`. Each job board gets its own subclass and is a pure fetcher — no DB access, no awareness of filters. Six scrapers exist today (Adzuna, Greenhouse, Lever, Ashby, Workable, Workday); adding another is a new file, a config model, and a branch in the planner.
 
-**Filters are separate from sources.** `config.yaml` splits *what* you want (`filters.titles`, `filters.locations`) from *where* you look (`sources` / `sources_file`). Adzuna is a search engine, so each `(title, location)` pair becomes a query. ATS boards (Greenhouse, Lever, Ashby) return a company's whole list, so the same filters are applied to the results afterwards (an optional `filters.board_locations` list can replace `locations` for boards only, for boards that use their own place names). `src/ingestion/planner.py` is what combines the two. See `docs/configuration.md`.
+**Filters are separate from sources.** `config.yaml` splits *what* you want (`filters.titles`, `filters.locations`) from *where* you look (`sources` / `sources_file`). Adzuna is a search engine, so each `(title, location)` pair becomes a query. ATS boards (Greenhouse, Lever, Ashby, Workable, Workday) return a company's whole list, so the same filters are applied to the results afterwards (an optional `filters.board_locations` list can replace `locations` for boards only, for boards that use their own place names). `src/ingestion/planner.py` is what combines the two. See `docs/configuration.md`.
 
 **Queue via the database, not asyncio.** Background async workers pushing updates into a UI mean fighting race conditions for no real benefit at this scale. Instead, each stage writes rows with the next stage's column left `NULL`, and a separate CLI script selects exactly those rows, does its work, and writes back: `make scrape` leaves `generated_cover_letter`/`contact_confidence` null, `make contacts` fills `contact_*` (queue: `contact_confidence IS NULL`), `make process` fills the generated materials (queue: `generated_cover_letter IS NULL`). The dashboard only reads from the database, plus status edits and jobs you add by hand; it never runs a scrape or the LLM. No in-flight state to lose, and any step can be re-run safely.
 
@@ -97,6 +119,8 @@ Out of scope:
 
 The **contact lookup** (`make contacts`, below) follows the same ethic: it reads only text a company already published in its own posting, makes no network calls, and never queries a data broker (Hunter, Apollo, RocketReach, ZoomInfo, etc.) or a logged-in source. A guessed address is always flagged as a guess, never asserted as verified. See [`docs/hiring-manager-lookup.md`](docs/hiring-manager-lookup.md).
 
+**A source that doesn't allow scraping by default is dropped, not worked around.** If a site's `robots.txt` disallows the paths a scraper needs (for example `Disallow: /` for every crawler), or it answers with a bot challenge, that source is out of scope. SmartRecruiters and the Adelaide PageUp employers were evaluated on that basis (see Status above). For Workday, which has no published contract, each tenant's `robots.txt` is checked before the board is added.
+
 If you fork this and add a scraper or contact source that requires login or a broker API, that's your decision and your risk — document it clearly in your own README rather than relying on this one.
 
 ## Data model
@@ -111,7 +135,7 @@ class JobPost(SQLModel, table=True):
     description: str
     url: str
     date_scraped: datetime = Field(default_factory=datetime.utcnow)
-    status: str = Field(default="To Apply")  # To Apply, Applied, Interviewing, Rejected
+    status: str = Field(default="To Apply")  # To Apply, Applied, Interviewing, Rejected, Not interested
     generated_cover_letter: Optional[str] = None
     generated_cold_email: Optional[str] = None
     contact_name: Optional[str] = None
@@ -122,9 +146,12 @@ class JobPost(SQLModel, table=True):
     posted_at: Optional[datetime] = None      # the source's own publish date, if given
     last_seen_at: Optional[datetime] = None   # last time a scrape returned it
     last_checked_at: Optional[datetime] = None  # last time check_links requested its URL
+    opened_at: Optional[datetime] = None      # when you first opened it (None = unread, shown bold)
 ```
 
-`job_board_id` is unique so re-running a scrape doesn't duplicate postings. Columns added after the first release (`contact_*` and the five dead-posting columns) are additive — `src/storage/database.py` adds them to an existing SQLite file on first run after upgrading, no manual migration needed. Full field-by-field notes: [`docs/data-model.md`](docs/data-model.md).
+A second small table, `ScrapeRun`, records when each `make scrape` started so the dashboard can mark the last run's jobs **New**.
+
+`job_board_id` is unique so re-running a scrape doesn't duplicate postings. Columns added after the first release (`contact_*`, the dead-posting columns and `opened_at`) are additive — `src/storage/database.py` adds them to an existing SQLite file on first run after upgrading, no manual migration needed. Full field-by-field notes: [`docs/data-model.md`](docs/data-model.md).
 
 **Closed postings.** A board scrape marks a job dead when its board stops listing it (`"gone from board"`); `make check-links` does the same for postings whose link returns 404/410 (in practice Adzuna ads, which no board re-lists). Dead postings with status `To Apply` or `Rejected` are then moved to a second SQLite file, `data/dead_jobs.db`, with every column kept for later analysis; `Applied` and `Interviewing` rows stay in `jobs.db`, marked dead. A posting a scrape returns again is restored. See [`docs/data-model.md`](docs/data-model.md#dead-postings-and-the-archive).
 
@@ -200,8 +227,11 @@ Calling `job-hunter\Scripts\python.exe` directly is equivalent to activating the
 ### Running tests
 
 ```bash
-pytest tests/
+pytest tests/    # 489 tests; none touch the network
+ruff check src tests
 ```
+
+CI runs both on every pull request (Python 3.11).
 
 ## Roadmap
 
@@ -217,11 +247,17 @@ This is being built incrementally. Rough sequence:
 8. Pydantic-validated config + multi-source/multi-search support (done)
 9. `database.url` wired through (SQLite default, Postgres via config or `JOBHUNTER_DATABASE_URL`) (done)
 10. `filters` / `sources` split + `sources_file` (plain-text board list, careers-URL auto-detection) (done)
-11. Lever and Ashby scrapers — third and fourth ATS sources (done)
+11. Lever and Ashby scrapers — second and third ATS sources (done)
 12. Adzuna scraper — sanctioned search API, the replacement for the SEEK feed, reaches AU + India (done)
 13. Board validation (`make validate`) and discovery (`make discover`) — keep the board list live and growing without a noise-adding firehose (done)
 14. Hiring-contact lookup v1 (`make contacts`) — public, in-posting-text only; shown with a confidence flag in the dashboard (done)
 15. `capture`/`JOBHUNTER_DUMP_DIR` debug dumping of unfiltered scrape output (done)
+16. Dead-posting handling: mark jobs dead when their board drops them, rework the link checker, archive dead rows (done; the "closed" marker for tracked jobs, scheduled checks and a parallel harness are open)
+17. Adzuna duplicates merged (one row per ad), and jobs can be added by hand from the dashboard (done)
+18. Dashboard moved from Streamlit to a small Flask app, with a triage view (done)
+19. `filters.board_locations`: a board-only location list (done)
+20. Workable and Workday scrapers — fifth and sixth sources (done). SmartRecruiters and PageUp were evaluated and dropped (see Status)
+21. Next: cut noise at ingest (KAN-37), better cover letters, and picking the Workable and Workday employers to follow
 
 A hosted-LLM config and resume parsing are still deferred — the LLM layer is intentionally left at one backend (Ollama) for now. The Workday scraper is built ([`docs/workday.md`](docs/workday.md)) — a multi-call, POST-based ATS unlike the others, checked against live boards; it needs a careers URL per employer and reads one site per tenant. See [`docs/roadmap.md`](docs/roadmap.md) for the detailed version and `TODO.md` for the working tracker.
 
