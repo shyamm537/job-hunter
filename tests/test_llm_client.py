@@ -76,3 +76,36 @@ def test_factory_threads_retry_config():
     assert isinstance(client, OllamaClient)
     assert client.max_retries == 5
     assert client.retry_backoff == 2.5
+
+
+def test_timeout_is_passed_with_a_short_connect_limit(monkeypatch):
+    seen = {}
+
+    def fake_post(*args, **kwargs):
+        seen["timeout"] = kwargs["timeout"]
+        return _FakeResponse({"response": "ok"})
+
+    monkeypatch.setattr(client_mod.requests, "post", fake_post)
+    OllamaClient(timeout=900).generate("p")
+    assert seen["timeout"] == (OllamaClient.CONNECT_TIMEOUT, 900)
+
+
+def test_a_read_timeout_is_not_retried(monkeypatch):
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(1)
+        raise requests.ReadTimeout("slow model")
+
+    monkeypatch.setattr(client_mod.requests, "post", fake_post)
+    with pytest.raises(requests.ReadTimeout):
+        OllamaClient(max_retries=2).generate("p")
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("configured, expected", [(None, 600), (1200, 1200), (0, None)])
+def test_factory_reads_the_timeout(configured, expected):
+    llm = {"backend": "ollama"}
+    if configured is not None:
+        llm["timeout"] = configured
+    assert get_llm_client({"llm": llm}).timeout == expected

@@ -178,13 +178,19 @@ class LLMConfig(BaseModel):
     max_retries: int = 2
     retry_backoff: float = 1.0
 
+    # Seconds to wait for one generation before giving up; 0 means wait as
+    # long as it takes. A local model can take minutes per letter. A timed-out
+    # call is not retried (the model was busy, not unreachable).
+    timeout: float = 600
+
     @model_validator(mode="after")
     def _non_negative(self) -> "LLMConfig":
         for name in ("batch_size", "max_retries"):
             if getattr(self, name) < 0:
                 raise ValueError(f"{name} must be >= 0")
-        if self.retry_backoff < 0:
-            raise ValueError("retry_backoff must be >= 0")
+        for name in ("retry_backoff", "timeout"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be >= 0")
         return self
 
 

@@ -202,3 +202,14 @@ def test_make_process_keeps_a_cold_email_from_the_dashboard(tmp_path, monkeypatc
     finally:
         database._database_url = None
         database._engine = None
+
+
+def test_a_timeout_says_how_to_raise_the_limit(app, client, llm):
+    import requests
+
+    llm.error = requests.ReadTimeout("read timed out")
+    job_id = _seed()
+    _generate(client, job_id, "cover_letter")
+    _wait(app)
+    page = client.get(f"/jobs/{job_id}").get_data(as_text=True)
+    assert "longer than 600 seconds" in page and "llm.timeout" in page

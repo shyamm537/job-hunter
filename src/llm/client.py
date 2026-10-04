@@ -28,7 +28,14 @@ class OllamaClient(LLMClient):
     are retried with exponential backoff. Once the retries are exhausted the
     original exception propagates — the caller (src/llm/cli.py) decides what to
     do with a job that can't be generated.
+
+    `timeout` is how many seconds to wait for a generation (None = no limit).
+    Connecting gets its own short limit, so an unreachable server still fails
+    fast. A read timeout is raised at once, not retried: the model was busy,
+    and asking again would only repeat the wait.
     """
+
+    CONNECT_TIMEOUT = 10
 
     def __init__(
         self,
@@ -36,11 +43,13 @@ class OllamaClient(LLMClient):
         host: str = "http://localhost:11434",
         max_retries: int = 2,
         retry_backoff: float = 1.0,
+        timeout: float | None = 600,
     ):
         self.model = model
         self.host = host
         self.max_retries = max_retries
         self.retry_backoff = retry_backoff
+        self.timeout = timeout
 
     def generate(self, prompt: str) -> str:
         attempts = self.max_retries + 1
@@ -49,10 +58,12 @@ class OllamaClient(LLMClient):
                 response = requests.post(
                     f"{self.host}/api/generate",
                     json={"model": self.model, "prompt": prompt, "stream": False},
-                    timeout=120,
+                    timeout=(self.CONNECT_TIMEOUT, self.timeout),
                 )
                 response.raise_for_status()
                 return response.json().get("response", "").strip()
+            except requests.ReadTimeout:
+                raise
             except requests.RequestException as exc:
                 if attempt == attempts - 1:
                     raise
@@ -81,6 +92,8 @@ def get_llm_client(config: dict) -> LLMClient:
             host=llm_config.get("host", "http://localhost:11434"),
             max_retries=llm_config.get("max_retries", 2),
             retry_backoff=llm_config.get("retry_backoff", 1.0),
+            # 0 in config means no limit, which requests spells None.
+            timeout=llm_config.get("timeout", 600) or None,
         )
 
     raise ValueError(

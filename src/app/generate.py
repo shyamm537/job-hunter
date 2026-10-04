@@ -91,6 +91,11 @@ class Generator:
                 host = self.llm_settings.get("host", "the LLM server")
                 reason = f"couldn't reach {host}. Is Ollama running?"
                 log.warning("Generating the %s for job %d failed: %s", label, job_id, exc)
+            elif isinstance(exc, requests.ReadTimeout):
+                limit = self.llm_settings.get("timeout")
+                reason = (f"the model took longer than {limit:g} seconds. Raise "
+                          "llm.timeout in config.yaml (0 = no limit) and try again.")
+                log.warning("Generating the %s for job %d timed out.", label, job_id)
             else:
                 reason = str(exc)
                 log.exception("Generating the %s for job %d failed.", label, job_id)
