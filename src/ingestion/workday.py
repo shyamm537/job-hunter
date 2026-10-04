@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Optional
 
 from src.ingestion.base_scraper import BaseScraper
 from src.ingestion.dates import parse_posted_at
-from src.ingestion.filtering import title_matches
+from src.ingestion.filtering import title_excluded, title_matches
 from src.ingestion.http_util import REQUEST_DELAY, get_json, post_json
 from src.ingestion.text_util import html_to_text
 from src.storage.models import JobPost
@@ -92,11 +92,15 @@ class WorkdayScraper(BaseScraper):
         datacenter: str,
         site: str,
         detail_titles: Optional[List[str]] = None,
+        skip_titles: Optional[List[str]] = None,
     ):
         self.tenant = tenant
         self.datacenter = datacenter
         self.site = site
         self.detail_titles = detail_titles
+        # Titles with one of these whole words are never fetched: the filter
+        # rejects them anyway (filters.exclude_titles), so the request is wasted.
+        self.skip_titles = skip_titles
 
     # -- URLs ------------------------------------------------------------------
 
@@ -193,7 +197,8 @@ class WorkdayScraper(BaseScraper):
             return jobs
 
         wanted = [(row, job) for row, job in zip(rows, jobs)
-                  if title_matches(job.title, self.detail_titles)]
+                  if title_matches(job.title, self.detail_titles)
+                  and not title_excluded(job.title, self.skip_titles)]
         for index, (row, job) in enumerate(wanted):
             if index:
                 time.sleep(REQUEST_DELAY)

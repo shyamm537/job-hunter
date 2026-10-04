@@ -33,7 +33,7 @@ Manually tracking job applications across spreadsheets and tabs doesn't scale pa
 As of 2026-10-04. Progress is tracked in the Jira project `KAN`.
 
 - **Works:** scraping six sources (Adzuna plus Greenhouse, Lever, Ashby, Workable and Workday boards), keeping postings current as they close, a local dashboard for triaging and tracking applications, and cover letters and cold emails from a local LLM.
-- **Not yet:** cutting noise from the results, better cover letters, scheduled runs and a hosted-LLM option. No Workable or Workday employers are configured yet.
+- **Not yet:** better cover letters, scheduled runs and a hosted-LLM option. The filters can now cut noise from results (extra and excluded titles, remote regions), but the lists have to be set in your `config.yaml`. No Workable or Workday employers are configured yet.
 - **Dropped:** SmartRecruiters and some PageUp employers, because their sites don't allow scraping.
 
 ## Architecture
@@ -93,7 +93,7 @@ job-hunter-ai/
 
 **Strategy Pattern for scrapers.** `BaseScraper` is an `abc.ABC` with one required method, `.scrape()`. Each job board gets its own subclass and is a pure fetcher — no DB access, no awareness of filters. Six scrapers exist today (Adzuna, Greenhouse, Lever, Ashby, Workable, Workday); adding another is a new file, a config model, and a branch in the planner.
 
-**Filters are separate from sources.** `config.yaml` splits *what* you want (`filters.titles`, `filters.locations`) from *where* you look (`sources` / `sources_file`). Adzuna is a search engine, so each `(title, location)` pair becomes a query. ATS boards (Greenhouse, Lever, Ashby, Workable, Workday) return a company's whole list, so the same filters are applied to the results afterwards (an optional `filters.board_locations` list can replace `locations` for boards only, for boards that use their own place names). `src/ingestion/planner.py` is what combines the two. See `docs/configuration.md`.
+**Filters are separate from sources.** `config.yaml` splits *what* you want (`filters.titles`, `filters.locations`) from *where* you look (`sources` / `sources_file`). Adzuna is a search engine, so each `(title, location)` pair becomes a query. ATS boards (Greenhouse, Lever, Ashby, Workable, Workday) return a company's whole list, so the same filters are applied to the results afterwards (an optional `filters.board_locations` list can replace `locations` for boards only, for boards that use their own place names). Every source's results are also checked by title, since Adzuna's search is fuzzy; optional `also_match_titles`, `exclude_titles` and `remote_regions` lists cut the rest of the noise, and `python -m src.storage.noise_cleanup` tidies jobs already stored. `src/ingestion/planner.py` is what combines the two. See `docs/configuration.md`.
 
 **Queue via the database, not asyncio.** Background async workers pushing updates into a UI mean fighting race conditions for no real benefit at this scale. Instead, each stage writes rows with the next stage's column left `NULL`, and a separate CLI script selects exactly those rows, does its work, and writes back: `make scrape` leaves `generated_cover_letter`/`contact_confidence` null, `make contacts` fills `contact_*` (queue: `contact_confidence IS NULL`), `make process` fills the generated materials (queue: `generated_cover_letter IS NULL`). The dashboard only reads from the database, plus status edits and jobs you add by hand; it never runs a scrape or the LLM. No in-flight state to lose, and any step can be re-run safely.
 
@@ -257,7 +257,8 @@ This is being built incrementally. Rough sequence:
 18. Dashboard moved from Streamlit to a small Flask app, with a triage view (done)
 19. `filters.board_locations`: a board-only location list (done)
 20. Workable and Workday scrapers — fifth and sixth sources (done). SmartRecruiters and PageUp were evaluated and dropped (see Status)
-21. Next: cut noise at ingest (KAN-37), better cover letters, and picking the Workable and Workday employers to follow
+21. Cut noise at ingest (KAN-37): Adzuna results are checked by title, with `also_match_titles`, `exclude_titles` and `remote_regions`, plus a one-off cleanup of stored jobs (done)
+22. Next: better cover letters, and picking the Workable and Workday employers to follow
 
 A hosted-LLM config and resume parsing are still deferred — the LLM layer is intentionally left at one backend (Ollama) for now. The Workday scraper is built ([`docs/workday.md`](docs/workday.md)) — a multi-call, POST-based ATS unlike the others, checked against live boards; it needs a careers URL per employer and reads one site per tenant. See [`docs/roadmap.md`](docs/roadmap.md) for the detailed version and `TODO.md` for the working tracker.
 

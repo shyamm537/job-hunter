@@ -56,11 +56,25 @@ class Filters(BaseModel):
     `locations` would add Adzuna searches. When set it REPLACES `locations` for
     boards (so repeat the cities in it) and its entries match as whole words;
     when empty, boards use `locations` as before.
+
+    Three more optional lists cut noise from results (all empty = no change):
+
+    - `also_match_titles`: extra titles that let a job through the title check
+      without becoming Adzuna searches (so no extra API calls). Ignored when
+      `titles` is empty, because an empty `titles` means "no title filter".
+    - `exclude_titles`: words that reject a job when they appear in its title,
+      matched as whole words (`sr` rejects "Sr. Analyst", not "Srinivas").
+    - `remote_regions`: when set, a job whose location says "remote" passes only
+      if it names no place ("Remote", "Global Remote") or names one of these
+      regions. Unset keeps "remote" passing for any country.
     """
 
     titles: List[str] = Field(default_factory=list)
     locations: List[str] = Field(default_factory=list)
     board_locations: List[str] = Field(default_factory=list)
+    also_match_titles: List[str] = Field(default_factory=list)
+    exclude_titles: List[str] = Field(default_factory=list)
+    remote_regions: List[str] = Field(default_factory=list)
 
 
 class GreenhouseSource(BaseModel):

@@ -40,11 +40,65 @@ clean and uniform — a source is purely "where".
 
 - Empty `titles` or `locations` list = no filter on that dimension (everything
   passes).
-- Title: case-insensitive substring against any wanted title.
+- Title: case-insensitive substring against any wanted title (`titles`, plus
+  `also_match_titles`), and none of `exclude_titles` may appear in it as a whole
+  word.
 - Location: case-insensitive substring against any wanted location, **but a
-  posting whose location mentions "remote" always passes** — you rarely want to
-  drop remote roles. (See `src/ingestion/filtering.py`.)
-- Adzuna is never post-filtered; its search query already did the filtering.
+  posting whose location mentions "remote" passes** — you rarely want to drop
+  remote roles. Set `remote_regions` to limit that to remote jobs open to your
+  region (see below). (See `src/ingestion/filtering.py`.)
+- **Every source is filtered by title.** Adzuna's search is fuzzy (about half the
+  ads stored before KAN-37 had no wanted title in their title), so its results are
+  checked by title after fetching. Its location is not re-checked: the query
+  already narrowed that. ATS boards are checked by title and location.
+
+### Cutting noise: `also_match_titles`, `exclude_titles`, `remote_regions`
+
+Three optional lists under `filters`. All are empty by default, so nothing
+changes until you set them.
+
+```yaml
+filters:
+  titles: ["data scientist", "data analyst", "machine learning", "analytics"]
+  also_match_titles: ["data engineer", "data science", "ai engineer", "ml engineer", "business analyst"]
+  exclude_titles: ["senior", "sr", "lead", "principal", "staff", "intern", "internship", "freelance"]
+  remote_regions: ["Australia", "India", "APAC"]
+```
+
+- **`also_match_titles`**: extra titles that let a job through the title check
+  **without becoming Adzuna searches**, so they cost no API calls (every entry in
+  `titles` is searched under every location). Ignored when `titles` is empty,
+  because an empty `titles` means "no title filter".
+- **`exclude_titles`**: words that reject a job when they appear in its title,
+  matched as **whole words** and case-insensitively: `sr` rejects "Sr. Analyst",
+  not "Srinivas"; `lead` rejects "Team Lead", not "Leadership Programme"; `intern`
+  and `internship` are separate entries. An exclusion wins over a wanted title
+  ("Senior Data Scientist" is dropped). Choose these for your own search:
+  `graduate`, for example, would drop "Graduate Data Analyst", which a recent
+  graduate probably wants.
+- **`remote_regions`**: when set, a job whose location says "remote" passes only if
+  it names no place (`Remote`, `Global Remote`, `Remote - Anywhere`) or names one
+  of these regions (`Remote - Australia`, `Remote, India`, `Sydney, Australia
+  (Remote)`). `Remote - United States` is dropped. A city you want still passes
+  (`Remote - Sydney`), and a literal `Remote` entry in `locations` no longer lets
+  every remote job through by itself. Unset keeps today's behaviour: "remote"
+  passes for any country.
+
+A job that a board still lists but the rules now reject is **not** marked "gone from
+board": the board's rows are compared against the unfiltered list.
+
+**Tidying jobs already stored.** The rules apply to jobs scraped from now on. To run
+them over what is already in the database, use the cleanup command:
+
+```
+python -m src.storage.noise_cleanup            # dry run: counts by reason, with examples
+python -m src.storage.noise_cleanup --apply    # mark them "Not interested" (back up data/ first)
+```
+
+It only touches jobs you have not touched: "To Apply", unread, no generated cover
+letter, and not added by hand. They become "Not interested" (hidden from the To Apply
+queue, skipped by `make process` and `make contacts`); nothing is deleted, and you can
+set one back from the dashboard.
 
 ### `filters.board_locations` (optional, boards only)
 
@@ -161,6 +215,9 @@ A bad line fails with a `ConfigError` naming the line number. See
 |---|---|---|
 | `filters.titles` / `filters.locations` | `src/ingestion/planner.py` (Adzuna queries) + `src/ingestion/filtering.py` (ATS post-filter) | Implemented. Empty = no filter. |
 | `filters.board_locations` | `src/ingestion/filtering.py` (ATS post-filter only) | Implemented. Optional; replaces `locations` for boards, whole-word match. Adzuna ignores it. |
+| `filters.also_match_titles` | `src/ingestion/filtering.py` (every source's post-filter) | Implemented (KAN-37). Optional; extra wanted titles that are not Adzuna searches. |
+| `filters.exclude_titles` | `src/ingestion/filtering.py` (every source's post-filter) | Implemented (KAN-37). Optional; whole-word title exclusions. |
+| `filters.remote_regions` | `src/ingestion/filtering.py` (the location check) | Implemented (KAN-37). Optional; limits which remote jobs pass. Unset = any remote passes. |
 | `sources[].type: adzuna` (`country`) | expands to `titles × locations` Adzuna searches in that country | Implemented. Needs the top-level `adzuna:` block (`app_id`, `app_key`). |
 | `sources[].type: greenhouse` (`board`) | `GreenhouseScraper`, then post-filtered | Implemented. |
 | `sources[].type: lever` (`company`) | `LeverScraper`, then post-filtered | Implemented. |
