@@ -161,7 +161,7 @@ def test_job_page_shows_the_full_row(client):
 def test_job_page_without_materials_points_at_make_process(client):
     (job_id,) = _seed(_job(1))
     page = client.get(f"/jobs/{job_id}").get_data(as_text=True)
-    assert "No cover letter generated yet" in page and "No cold email generated yet" in page
+    assert page.count("Not generated yet. Use the button, or run <code>make process</code>.") == 2
     assert "Contact lookup not run yet" in page
 
 

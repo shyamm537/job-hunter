@@ -10,6 +10,10 @@ posted first. A job is unread until you open it or change its status, and
 "new" if the latest `make scrape` run first stored it. "Not interested"
 dismisses a job in one click.
 
+A job's page can generate its cover letter or cold email on demand (KAN-43):
+the work runs in the background (src/app/generate.py) and the page reloads
+when it's done.
+
 Local-only guards (see check_request): the app answers only to localhost
 Host headers, which blocks DNS-rebinding, and refuses a POST that comes from
 another origin, so a web page you visit can't submit forms to it.
@@ -27,6 +31,7 @@ from flask import (
     abort,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -48,6 +53,7 @@ from src.storage.database import (
     set_job_status,
     utcnow,
 )
+from src.llm.prompts import MATERIALS
 from src.storage.models import NOT_INTERESTED, STATUSES, TO_APPLY
 
 bp = Blueprint("web", __name__)
@@ -257,9 +263,39 @@ def job(job_id: int):
             session.refresh(found)
     if found is None:
         abort(404)
+    generator = _generator()
     return render_template(
-        "job.html", job=found, statuses=STATUSES, here=request.full_path.rstrip("?")
+        "job.html", job=found, statuses=STATUSES, here=request.full_path.rstrip("?"),
+        generating=generator.running(job_id), errors=generator.pop_errors(job_id),
     )
+
+
+def _generator():
+    return current_app.extensions["generator"]
+
+
+@bp.post("/jobs/<int:job_id>/generate")
+def generate(job_id: int):
+    """Start generating one material for this job in the background."""
+    kind = request.form.get("kind", "")
+    if kind not in MATERIALS:
+        abort(400, f"Unknown material {kind!r}.")
+    with get_session() as session:
+        if get_job(session, job_id) is None:
+            abort(404)
+    label = MATERIALS[kind][2]
+    if _generator().start(job_id, kind):
+        flash(f"Generating the {label}. This can take a few minutes; the page "
+              "updates when it's ready, and you can keep working meanwhile.", "info")
+    else:
+        flash(f"The {label} is already being generated.", "info")
+    return redirect(url_for("web.job", job_id=job_id))
+
+
+@bp.get("/jobs/<int:job_id>/generating")
+def generating(job_id: int):
+    """What's still generating for this job, for the page's reload check."""
+    return jsonify(running=_generator().running(job_id))
 
 
 @bp.post("/jobs/<int:job_id>/status")
