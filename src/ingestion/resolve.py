@@ -337,6 +337,9 @@ def main(argv: Optional[List[str]] = None) -> None:
         print(exc, file=sys.stderr)
         raise SystemExit(1)
 
+    # Posting titles can hold characters a Windows console cannot encode.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     print(format_report(outcome, dry_run=args.dry_run))
 
 
