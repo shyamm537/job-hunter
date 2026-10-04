@@ -196,34 +196,48 @@ isn't derivable from one, so they come from a pasted careers URL (in
 (`workday cba wd3 CommBank_Careers`). See [`docs/workday.md`](./workday.md) for
 the limits (one site per tenant, boards of 2,000+ postings can't be read).
 
-## 3. Proposals from your Adzuna results (`make discover`)
+## 3. Finding companies in your Adzuna results (`make discover`)
 
-The older, propose-then-approve route. Your search source (Adzuna) already
-surfaces companies hiring your exact roles. `make discover`
-(`src/ingestion/discover.py`):
+Your search source (Adzuna) already surfaces companies hiring your exact roles.
+`make discover` (`src/ingestion/discover.py`) turns those into **company names to
+follow**, not boards. It makes no network calls:
 
-1. Reads the distinct **companies** from Adzuna postings already in your DB.
-2. Slugifies each name into candidate board tokens (the same `slug_variants()`).
-3. Builds Greenhouse/Lever/Ashby/Workable candidates and **validates each live**,
-   skipping boards you already have.
-4. Writes the confirmed-live ones as **commented proposals** to
-   `sources.discovered.txt`, matches first.
+1. Reads the Adzuna ads already stored in your database (not the board rows: those
+   are companies you already have a board for).
+2. Merges spelling variants: "Thermo Fisher Scientific", "ThermoFisher Scientific"
+   and "Thermo Fisher Scientific Pty Ltd" are one company (they share a joined
+   slug). The commonest spelling is shown, the others are noted beside it.
+3. Drops the companies already in `companies.txt`, matching names and plain
+   aliases the same way.
+4. Writes the rest to `companies.discovered.txt` as commented lines with the
+   number of ads, for example `# Altis    # 11 ads, 4 local`. Names with ads in
+   your wanted places come first ("local" means a whole-word match on
+   `filters.board_locations`, or `filters.locations` if that is empty, ignoring a
+   literal "remote").
 
-Nothing is added from here automatically: you review, uncomment the keepers and
-move them into `sources.txt`, or add the company names you want to
-`companies.txt` and let `make resolve` find them.
+Proposals only: nothing is added for you. Copy the ones you want into
+`companies.txt` (delete the leading `# `; the note after the name is a trailing
+comment and is ignored), then run `make resolve`:
 
 ```bash
 make scrape       # populate Adzuna companies first (if you haven't)
-make discover     # writes sources.discovered.txt
-# review it, uncomment the boards worth keeping, paste them into sources.txt
-make validate     # sanity-check the merged list
+make discover     # writes companies.discovered.txt (--min-ads N to cut the tail)
+# review it, copy the employers worth following into companies.txt
+make resolve      # finds their boards
 ```
 
-Discovery has the same limits as resolving (no false positives, plenty of false
-negatives, and a token can belong to another company), is only as good as your
-Adzuna data, and makes live API calls (companies x ~2 slugs x 4 boards; bound it
-with `--limit N`).
+What to expect:
+
+- **Recruiters and agencies are in the list** ("Hire Resolve.com", "Swordfish HR",
+  "On Q Recruitment"). Skipping them is your call; the program cannot tell.
+- **Not every spelling is merged.** "Commonwealth Bank of Australia" is not the
+  same key as "Commonwealth Bank", so it is proposed again unless `companies.txt`
+  has it under that name or as an alias.
+- **A name is not a board.** Most companies in the list have no Greenhouse, Lever,
+  Ashby or Workable board; `make resolve` records the ones that do.
+- It is only as good as your Adzuna data: companies Adzuna returned for your
+  titles and locations, so relevant by construction but bounded by what Adzuna
+  surfaces.
 
 ## 4. Maintenance: keep the list from rotting
 

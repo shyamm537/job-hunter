@@ -16,6 +16,7 @@ config.yaml
 
 sources.txt
 companies.txt
+companies.discovered.txt
 data/board_map.yaml
 .Rhistory
 

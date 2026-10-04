@@ -45,9 +45,9 @@ validate:
 resolve:
 	python -m src.ingestion.resolve
 
-# Propose new boards from companies already in your Adzuna results. Writes
-# commented proposals to sources.discovered.txt — review and uncomment to
-# approve, then move the keepers into sources.txt. See docs/board-discovery.md.
+# Propose companies to follow from your stored Adzuna results (no network).
+# Writes commented names to companies.discovered.txt: copy the ones you want
+# into companies.txt, then `make resolve`. See docs/board-discovery.md.
 discover:
 	python -m src.ingestion.discover
 

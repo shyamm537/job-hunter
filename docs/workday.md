@@ -142,7 +142,8 @@ some days. Back-to-back scrapes were checked (456 postings, then 0 new and 0 gon
 
 ## Not covered
 
-- **`make discover`** does not look for Workday boards: the tenant, data centre and
-  site cannot be derived from a company name.
+- **`make resolve`** does not look for Workday boards by name: the tenant, data
+  centre and site cannot be derived from a company name. Give the careers URL as an
+  alias in `companies.txt`, or add the board to `sources.txt`.
 - The facets in the list response (company, job family, time type, country and
   region) are ignored; filtering is done after fetching, like every other board.

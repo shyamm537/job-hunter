@@ -75,7 +75,7 @@ function Invoke-Step {
 # there shouldn't block the core run, so they warn-and-continue. scrape and
 # process are the core pipeline and stop on failure. check-links runs before
 # contacts/process so closed postings are archived before any work on them.
-Invoke-Step "discover  (propose new boards)"   @("-m", "src.ingestion.discover") -Optional
+Invoke-Step "discover  (propose company names)"   @("-m", "src.ingestion.discover") -Optional
 Invoke-Step "validate  (check boards are live)" @("-m", "src.ingestion.validate") -Optional
 Invoke-Step "scrape    (fetch postings)"        @("-m", "src.ingestion.cli")
 Invoke-Step "check-links (find closed postings)" @("-m", "src.ingestion.check_links", "--mark-dead") -Optional

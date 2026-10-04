@@ -19,6 +19,10 @@
 # out to belong to a different company, add a block line for it.
 #
 # A board listed in sources.txt is pinned: it always wins over the map.
+#
+# Not sure which employers to list? `make discover` reads the companies in your
+# stored Adzuna results and writes them to companies.discovered.txt, with ad
+# counts, for you to copy from.
 
 Canva
 Atlassian
