@@ -92,7 +92,10 @@ def main() -> None:
             unfiltered = jobs
             fetched = len(jobs)
             if plan.post_filter:
-                jobs = [job for job in jobs if job_matches(job, filters)]
+                jobs = [
+                    job for job in jobs
+                    if job_matches(job, filters, check_location=plan.check_location)
+                ]
             kept = len(jobs)
 
             new_here = 0

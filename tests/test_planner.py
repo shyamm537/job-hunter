@@ -101,6 +101,59 @@ def test_a_single_workday_source_is_never_refused():
     assert len(plan_scrapes([_workday()], Filters())) == 1
 
 
+def test_adzuna_plans_check_the_title_but_not_the_location():
+    plans = plan_scrapes(
+        [AdzunaSource(type="adzuna", country="au")],
+        Filters(titles=["data analyst"], locations=["Adelaide"]),
+        adzuna_auth=("id", "key"),
+    )
+    assert plans and all(p.post_filter is True for p in plans)
+    assert all(p.check_location is False for p in plans)
+
+
+def test_board_plans_check_the_location():
+    plans = plan_scrapes(
+        [
+            GreenhouseSource(type="greenhouse", board="stripe"),
+            LeverSource(type="lever", company="figma"),
+            AshbySource(type="ashby", org="ramp"),
+            WorkableSource(type="workable", account="squiz"),
+            _workday(),
+        ],
+        Filters(),
+    )
+    assert len(plans) == 5 and all(p.check_location is True for p in plans)
+
+
+def test_also_match_titles_never_become_adzuna_searches():
+    base = dict(titles=["data analyst"], locations=["Adelaide"])
+    plain = plan_scrapes(
+        [AdzunaSource(type="adzuna", country="au")], Filters(**base), adzuna_auth=("id", "key")
+    )
+    extended = plan_scrapes(
+        [AdzunaSource(type="adzuna", country="au")],
+        Filters(**base, also_match_titles=["data engineer", "business analyst"],
+                exclude_titles=["senior"], remote_regions=["Australia"]),
+        adzuna_auth=("id", "key"),
+    )
+    assert [p.label for p in extended] == [p.label for p in plain]  # same searches, no extra calls
+    assert len(extended) == 1
+
+
+def test_workday_plan_fetches_details_for_wanted_titles_including_also_match_titles():
+    filters = Filters(
+        titles=["data analyst"], also_match_titles=["data engineer"], exclude_titles=["senior", "lead"],
+    )
+    (plan,) = plan_scrapes([_workday()], filters)
+    assert plan.scraper.detail_titles == ["data analyst", "data engineer"]
+    assert plan.scraper.skip_titles == ["senior", "lead"]
+
+
+def test_workday_plan_with_no_titles_set_fetches_no_details():
+    (plan,) = plan_scrapes([_workday()], Filters(also_match_titles=["data engineer"]))
+    assert plan.scraper.detail_titles == []  # empty titles = no title filter; also is ignored
+
+
 def test_adzuna_searches_use_locations_never_board_locations():
     # board_locations is for board post-filtering only; it must not add searches.
     both = plan_scrapes(

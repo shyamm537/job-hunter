@@ -6,10 +6,13 @@ intent differently:
 
 - Adzuna is a search engine: each (title, location) pair becomes one
   search, so a single search source expands into len(titles) x len(locations)
-  scrapers. Nothing to post-filter — the query already did it.
+  scrapers. Its query already narrowed the location, but the search is fuzzy
+  (about half the ads don't have a wanted title), so the results are checked by
+  title afterwards (post_filter=True, check_location=False). Only `titles`
+  become searches, never `also_match_titles`, so extra titles cost no API calls.
 - An ATS board (Greenhouse, Lever, Ashby, Workable, Workday) returns a company's whole list, so we
-  scrape it once and filter the postings afterwards (post_filter=True; see
-  src/ingestion/filtering.py).
+  scrape it once and filter the postings afterwards by title and location
+  (post_filter=True; see src/ingestion/filtering.py).
 
 Adding a source type is a new branch here plus a config model — the CLI loops
 over PlannedScrape objects and never learns the concrete types.
@@ -31,6 +34,7 @@ from src.config import (
 from src.ingestion.adzuna import AdzunaScraper, country_of
 from src.ingestion.ashby import AshbyScraper
 from src.ingestion.base_scraper import BaseScraper
+from src.ingestion.filtering import wanted_titles
 from src.ingestion.greenhouse import GreenhouseScraper
 from src.ingestion.lever import LeverScraper
 from src.ingestion.workable import WorkableScraper
@@ -43,9 +47,12 @@ log = logging.getLogger("jobhunter.plan")
 class PlannedScrape:
     scraper: BaseScraper
     label: str
-    # Whether to apply the title/location filters to results after scraping.
-    # True for ATS boards, False for Adzuna (its query already filtered).
+    # Whether to apply the filters to results after scraping. True for every
+    # source today: the title rules apply to all of them.
     post_filter: bool
+    # Whether the location rules are part of that post-filter. False for Adzuna,
+    # whose search query already narrowed the location (only the title is checked).
+    check_location: bool = True
     # (source, token) for a whole-board scrape (Greenhouse/Lever/Ashby/Workable/Workday). The
     # scrape CLI uses it to compare the board's stored rows with what the
     # board still lists (reconcile_board). None for Adzuna: a search result
@@ -58,6 +65,7 @@ def plan_adzuna(
     titles: List[str],
     locations: List[str],
     adzuna_auth: Optional[Tuple[str, str]] = None,
+    filters: Optional[Filters] = None,
 ) -> List[PlannedScrape]:
     if not titles:
         log.warning("Adzuna source skipped: no filters.titles defined to search for")
@@ -88,7 +96,8 @@ def plan_adzuna(
                         app_key=app_key,
                     ),
                     f"adzuna[{source.country}: {title} @ {location}]",
-                    post_filter=False,
+                    post_filter=True,
+                    check_location=False,
                 )
             )
     return planned
@@ -99,6 +108,7 @@ def plan_greenhouse(
     titles: List[str],
     locations: List[str],
     adzuna_auth: Optional[Tuple[str, str]] = None,
+    filters: Optional[Filters] = None,
 ) -> List[PlannedScrape]:
     return [
         PlannedScrape(
@@ -115,6 +125,7 @@ def plan_lever(
     titles: List[str],
     locations: List[str],
     adzuna_auth: Optional[Tuple[str, str]] = None,
+    filters: Optional[Filters] = None,
 ) -> List[PlannedScrape]:
     return [
         PlannedScrape(
@@ -131,6 +142,7 @@ def plan_ashby(
     titles: List[str],
     locations: List[str],
     adzuna_auth: Optional[Tuple[str, str]] = None,
+    filters: Optional[Filters] = None,
 ) -> List[PlannedScrape]:
     return [
         PlannedScrape(
@@ -147,6 +159,7 @@ def plan_workable(
     titles: List[str],
     locations: List[str],
     adzuna_auth: Optional[Tuple[str, str]] = None,
+    filters: Optional[Filters] = None,
 ) -> List[PlannedScrape]:
     return [
         PlannedScrape(
@@ -163,16 +176,21 @@ def plan_workday(
     titles: List[str],
     locations: List[str],
     adzuna_auth: Optional[Tuple[str, str]] = None,
+    filters: Optional[Filters] = None,
 ) -> List[PlannedScrape]:
-    # The title filters double as "which postings are worth a detail request"
-    # (see WorkdayScraper): descriptions are fetched for title matches only.
+    # The title rules double as "which postings are worth a detail request" (see
+    # WorkdayScraper): a description is fetched only for a posting that the title
+    # filter will keep, so also_match_titles count and exclude_titles don't.
+    detail_titles = wanted_titles(filters) if filters is not None else titles
+    skip_titles = list(filters.exclude_titles) if filters is not None else []
     return [
         PlannedScrape(
             WorkdayScraper(
                 tenant=source.tenant,
                 datacenter=source.datacenter,
                 site=source.site,
-                detail_titles=titles,
+                detail_titles=detail_titles,
+                skip_titles=skip_titles,
             ),
             f"workday[{source.tenant}/{source.site}]",
             post_filter=True,
@@ -231,6 +249,6 @@ def plan_scrapes(
             planner = SOURCE_PLANNERS[source.type]
         except KeyError:
             raise ValueError(f"Unknown source type: {source.type!r}") from None
-        planned.extend(planner(source, titles, locations, adzuna_auth))
+        planned.extend(planner(source, titles, locations, adzuna_auth, filters))
 
     return planned

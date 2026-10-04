@@ -117,7 +117,9 @@ def test_planner_pairs_locations_with_matching_country():
     wheres = sorted(p.scraper.where for p in plans)
     # Adelaide (au) + Remote (region-agnostic) run under au; Mumbai (in) skipped.
     assert wheres == ["Adelaide", "Remote"]
-    assert all(p.post_filter is False for p in plans)
+    # Adzuna results are post-filtered by title (its search is fuzzy), but not by
+    # location: the query already narrowed that (KAN-37).
+    assert all(p.post_filter is True and p.check_location is False for p in plans)
     assert all(p.scraper.country == "au" for p in plans)
 
 

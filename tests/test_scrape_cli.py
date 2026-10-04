@@ -325,3 +325,99 @@ def test_other_boards_and_adzuna_rows_are_untouched(tmp_path, monkeypatch):
     for job_board_id in ("greenhouse-other-9", "lever-acme-8", "adzuna-1"):
         assert rows[job_board_id].dead_at is None, job_board_id
         assert rows[job_board_id].last_seen_at is None, job_board_id
+
+
+# --- noise filters (KAN-37) ---------------------------------------------------------
+
+
+def _noise_config(db_path, **filters):
+    return config.Config.model_validate(
+        {
+            "filters": filters,
+            "sources": [{"type": "greenhouse", "board": "acme"}],
+            "database": {"url": f"sqlite:///{db_path}"},
+        }
+    )
+
+
+def _ad(n, title, location="Perth"):
+    return dict(job_board_id=f"adzuna-{n}", title=title, company="Co", location=location,
+                description="snippet", url=f"http://adzuna/{n}")
+
+
+def _run_adzuna_plan(monkeypatch, db_path, specs, **filters):
+    monkeypatch.setattr(cli, "load_config", lambda *a, **k: _noise_config(db_path, **filters))
+    plan = PlannedScrape(FakeScraper(specs=specs), "adzuna[au: data analyst @ Adelaide]",
+                         post_filter=True, check_location=False)
+    monkeypatch.setattr(cli, "plan_scrapes", lambda s, f, **k: [plan])
+    cli.main()
+
+
+def test_adzuna_results_are_checked_by_title_but_not_by_location(tmp_path, monkeypatch, caplog):
+    db = tmp_path / "jobs.db"
+    specs = [
+        _ad(1, "Data Analyst", location="Perth"),        # wanted title; location not checked
+        _ad(2, "Business Analyst", location="Sydney"),   # fuzzy hit, not a wanted title: dropped
+        _ad(3, "Senior Data Analyst"),                    # wanted but excluded: dropped
+        _ad(4, "Data Engineer"),                          # via also_match_titles: kept
+    ]
+    with caplog.at_level("INFO", logger="jobhunter.scrape"):
+        _run_adzuna_plan(
+            monkeypatch, db, specs,
+            titles=["data analyst"], also_match_titles=["data engineer"],
+            exclude_titles=["senior"], locations=["Adelaide"],
+        )
+    assert sorted(r.job_board_id for r in _rows(db)) == ["adzuna-1", "adzuna-4"]
+    # The log shows fetched vs kept for Adzuna too.
+    assert any("4 fetched, 2 kept after filters, 2 new" in r.getMessage() for r in caplog.records)
+
+
+def test_adzuna_without_the_new_filters_behaves_as_title_check_only(tmp_path, monkeypatch):
+    db = tmp_path / "jobs.db"
+    _run_adzuna_plan(monkeypatch, db, [_ad(1, "Data Analyst"), _ad(2, "Chef")], titles=["analyst"])
+    assert [r.job_board_id for r in _rows(db)] == ["adzuna-1"]
+
+
+def test_board_remote_jobs_are_filtered_by_region_and_title(tmp_path, monkeypatch):
+    db = tmp_path / "jobs.db"
+    specs = [
+        dict(job_board_id="gh-1", title="Data Analyst", company="acme", location="Remote - United States",
+             description="d", url="http://x/1"),
+        dict(job_board_id="gh-2", title="Data Analyst", company="acme", location="Remote - Australia",
+             description="d", url="http://x/2"),
+        dict(job_board_id="gh-3", title="Data Analyst", company="acme", location="Global Remote",
+             description="d", url="http://x/3"),
+        dict(job_board_id="gh-4", title="Senior Data Analyst", company="acme", location="Global Remote",
+             description="d", url="http://x/4"),
+    ]
+    monkeypatch.setattr(
+        cli, "load_config",
+        lambda *a, **k: _noise_config(db, titles=["data analyst"], locations=["Adelaide"],
+                                      exclude_titles=["senior"], remote_regions=["Australia"]),
+    )
+    plan = PlannedScrape(FakeScraper(specs=specs), "greenhouse[acme]", post_filter=True,
+                         board=("greenhouse", "acme"))
+    monkeypatch.setattr(cli, "plan_scrapes", lambda s, f, **k: [plan])
+    cli.main()
+    assert sorted(r.job_board_id for r in _rows(db)) == ["gh-2", "gh-3"]
+
+
+def test_a_board_row_dropped_by_the_new_rules_is_still_reconciled_as_present(tmp_path, monkeypatch):
+    # reconcile_board uses the UNFILTERED list: a posting that the new rules now
+    # reject but the board still lists must not be marked "gone from board".
+    db = tmp_path / "jobs.db"
+    spec = dict(job_board_id="greenhouse-acme-1", title="Senior Data Analyst", company="acme",
+                location="Remote - United States", description="d", url="http://x/1")
+    _seed(db, JobPost(**spec))
+    monkeypatch.setattr(
+        cli, "load_config",
+        lambda *a, **k: _noise_config(db, titles=["data analyst"], exclude_titles=["senior"],
+                                      locations=["Adelaide"]),
+    )
+    plan = PlannedScrape(FakeScraper(specs=[spec]), "greenhouse[acme]", post_filter=True,
+                         board=("greenhouse", "acme"))
+    monkeypatch.setattr(cli, "plan_scrapes", lambda s, f, **k: [plan])
+    cli.main()
+    (row,) = _rows(db)
+    assert row.dead_at is None and row.last_seen_at is not None
+    assert _archived(db) == []

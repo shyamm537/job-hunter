@@ -394,6 +394,23 @@ def test_a_malformed_detail_does_not_fail_the_scrape():
     assert job.location == "Bangalore - Manyata Tech Park Road"
 
 
+def test_skip_titles_are_never_fetched():
+    rows = [_row(1, "Data Analyst"), _row(2, "Senior Data Analyst"), _row(3, "Lead Data Scientist"),
+            _row(4, "Leadership Data Analyst")]  # "lead" is a whole word only in row 3
+    fake = FakeWorkday(rows)
+    jobs, _ = _run(fake, detail_titles=["data"], skip_titles=["senior", "lead"])
+    assert len(jobs) == 4  # still returned: reconcile needs the whole board
+    fetched = [url.split("Careers", 1)[1] for url, _ in fake.get_calls]
+    assert fetched == [rows[0]["externalPath"], rows[3]["externalPath"]]
+    assert _by_title(jobs, "Senior Data Analyst").description == ""
+
+
+def test_no_skip_titles_changes_nothing():
+    fake = FakeWorkday([_row(1, "Senior Data Analyst")])
+    _run(fake, detail_titles=["data"])
+    assert len(fake.get_calls) == 1
+
+
 @pytest.mark.parametrize("empty", [None, []])
 def test_no_title_filters_means_no_detail_calls(empty):
     # title_matches(title, []) is True, so without an explicit check every
