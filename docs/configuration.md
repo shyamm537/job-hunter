@@ -261,6 +261,7 @@ board_map_file: "data/board_map.yaml"            # default
 | `resolve.boards` / `resolve.recheck_days` / `resolve.stale_after` | `src/ingestion/resolve.py` | Implemented. `stale_after` is how many separate days of a definite "not here" retire a mapped board during `make scrape`. |
 | `adzuna.app_id` / `adzuna.app_key` | `src/ingestion/planner.py` → `AdzunaScraper` | Implemented. Free from developer.adzuna.com. |
 | `llm.backend` / `llm.model` / `llm.host` | `src/llm/client.py` | Implemented. Only `ollama` valid in the LLM layer; config layer permits extra `llm.*` keys (backend undecided). |
+| `llm.timeout` | `src/llm/client.py` | Implemented. Seconds to wait for one generation (default 600; 0 = no limit). A timed-out call is not retried; an unreachable server still fails within 10 seconds. |
 | `resume_summary` | `src/llm/cli.py` → prompt templates | Implemented; a hand-written string, not parsed from a file. |
 | `database.url` | `src/storage/database.py` | Wired. See below. |
 

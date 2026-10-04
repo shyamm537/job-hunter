@@ -126,7 +126,7 @@ def test_llm_accepts_positive_batch_and_retry():
 
 @pytest.mark.parametrize(
     "bad",
-    [{"batch_size": -1}, {"max_retries": -1}, {"retry_backoff": -0.5}],
+    [{"batch_size": -1}, {"max_retries": -1}, {"retry_backoff": -0.5}, {"timeout": -1}],
 )
 def test_llm_rejects_negative_values(bad):
     with pytest.raises(ValidationError):

@@ -73,6 +73,7 @@ llm:
   batch_size: 0                 # max jobs per `make process` run; 0 = whole queue
   max_retries: 2                # extra tries after the first on a failed LLM call
   retry_backoff: 1.0            # base seconds; waits retry_backoff * 2**attempt
+  timeout: 600                  # seconds to wait for one generation; 0 = no limit
 
 # ── Adzuna search API (optional) ────────────────────────────────────────────
 # Sanctioned job-search API with a free tier; per-country (au, in, gb, ...).
