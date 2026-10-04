@@ -305,8 +305,25 @@ class Config(BaseModel):
 
     @property
     def resolved_sources(self) -> List[Source]:
-        """Where to look: the pinned sources."""
-        return self.pinned_sources
+        """Where to look: the pinned sources plus the `live` boards of the board
+        map, when `companies_file` is set (unset ignores the map file). A pinned
+        board wins over a mapped one with the same `source_key()`, so a pinned
+        Workday site and a mapped site of one tenant collapse to the pinned one
+        before planning."""
+        pinned = self.pinned_sources
+        if not self.companies_file:
+            return pinned
+        # Imported here: board_map imports this module.
+        from src.ingestion.board_map import live_sources, load_map
+
+        collected = list(pinned)
+        seen = {source_key(source) for source in pinned}
+        for source in live_sources(load_map(self.board_map_file)):
+            key = source_key(source)
+            if key not in seen:
+                seen.add(key)
+                collected.append(source)
+        return collected
 
     @property
     def resolved_filters(self) -> Filters:
@@ -565,6 +582,19 @@ def _split_source_line(line: str) -> List[str]:
             break
         parts.append(token)
     return parts
+
+
+def source_from_text(text: str, where: str) -> Source:
+    """Parse one sources-file line held in a string (no file, no line number),
+    for a line stored elsewhere, such as in the board map. `where` labels the
+    error message."""
+    try:
+        parts = _split_source_line(text)
+    except ValueError as exc:
+        raise ConfigError(f"{where}: {exc}") from exc
+    if not parts:
+        raise ConfigError(f"{where}: empty source line")
+    return _source_from_line(where, 0, parts)
 
 
 def load_sources_file(path: str) -> List[Source]:
