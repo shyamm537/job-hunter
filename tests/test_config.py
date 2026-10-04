@@ -136,6 +136,29 @@ def test_empty_filters_default():
     assert f.board_locations == []
 
 
+def test_noise_filters_default_to_empty_and_parse_from_yaml(tmp_path):
+    f = Filters()
+    assert f.also_match_titles == [] and f.exclude_titles == [] and f.remote_regions == []
+
+    path = _write(
+        tmp_path,
+        """
+        filters:
+          titles: ["data analyst"]
+          also_match_titles: ["data engineer", "business analyst"]
+          exclude_titles: ["senior", "sr", "intern"]
+          remote_regions: ["Australia", "India", "APAC"]
+        sources:
+          - type: greenhouse
+            board: stripe
+        """,
+    )
+    f = load_config(path).resolved_filters
+    assert f.also_match_titles == ["data engineer", "business analyst"]
+    assert f.exclude_titles == ["senior", "sr", "intern"]
+    assert f.remote_regions == ["Australia", "India", "APAC"]
+
+
 def test_board_locations_parse_from_yaml(tmp_path):
     path = _write(
         tmp_path,
