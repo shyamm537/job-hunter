@@ -53,8 +53,9 @@ would be dropped by a city location filter.
 `src/ingestion/adzuna.py`. The search/aggregator source. It's a sanctioned API
 with a free tier, and **per-country** — `https://api.adzuna.com/v1/api/jobs/<country>/
 search/<page>?app_id=…&app_key=…&what=…&where=…` — so it reaches India (`in`) as
-well as Australia (`au`). It's a *search* source (`post_filter=False`):
-the planner expands `titles × locations` into queries, pairing each location with
+well as Australia (`au`). It's a *search* source: its results are post-filtered by
+title only (`post_filter=True, check_location=False`), because the search is fuzzy but
+the query already narrowed the location. The planner expands `titles × locations` into queries, pairing each location with
 its country via `country_of()` (Adelaide→au, Mumbai→in) so it doesn't query the
 wrong index. Credentials come from the top-level `adzuna:` config block, threaded
 through `plan_scrapes(..., adzuna_auth=...)`. Its `job_board_id` is built from a
@@ -140,14 +141,17 @@ differently:
 ```python
 def plan_scrapes(sources, filters):
     # Adzuna: each (title, location) is a query -> one AdzunaScraper per pair
-    #         in that country, no post-filter (the query already filtered).
+    #         in that country, post-filtered by TITLE only (the query already
+    #         narrowed the location; only `titles` become queries).
     # ATS:  scrape the whole board once, post_filter=True -> filter results
     #       with src/ingestion/filtering.py's job_matches().
     ...
 ```
 
-It returns `PlannedScrape(scraper, label, post_filter)` items. `cli.py` runs each,
-applies the filter to ATS results, and upserts. A planned scrape that throws is
+It returns `PlannedScrape(scraper, label, post_filter, check_location)` items.
+`cli.py` runs each, applies the filters (title for every source, location too unless
+`check_location` is false, as for Adzuna), and upserts; the scrape log shows
+`fetched, kept after filters` for each. A planned scrape that throws is
 logged and skipped — it doesn't abort the run. Location filtering is lenient: a
 posting whose location mentions "remote" always passes (see
 `docs/configuration.md`). Board postings are matched against the optional

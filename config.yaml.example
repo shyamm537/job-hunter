@@ -18,6 +18,17 @@ filters:
   # Area" but not "San Francisco". Leave it out to use `locations` for boards.
   # board_locations: ["Adelaide", "SA", "Bedford Park", "Sydney"]
 
+  # Optional ways to cut noise from every source's results (see docs/configuration.md).
+  # Titles that also pass the title check without becoming Adzuna searches (no extra
+  # API calls). Ignored if `titles` is empty.
+  # also_match_titles: ["data engineer", "data science", "ai engineer", "ml engineer", "business analyst"]
+  # Words that reject a job when they appear in its title (whole words, any case).
+  # Choose these for your own search: "graduate" would drop "Graduate Data Analyst".
+  # exclude_titles: ["senior", "sr", "lead", "principal", "staff", "intern", "internship", "freelance"]
+  # When set, a "remote" job passes only if it names no place ("Remote", "Global
+  # Remote") or one of these regions. Unset = remote passes for any country.
+  # remote_regions: ["Australia", "India", "APAC"]
+
 # ── Where to look ───────────────────────────────────────────────────────────
 # Sources are just "where". ATS boards (greenhouse/lever/ashby/workable/workday) are global —
 # they return a company's whole list and the location filter above keeps the

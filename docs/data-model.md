@@ -69,6 +69,8 @@ A second small table, `ScrapeRun` (`id`, `started_at`), gets one row each time `
 
 ## Status lifecycle
 
+(Jobs stored before the title and remote-region rules existed can be tidied in one go with `python -m src.storage.noise_cleanup`, which marks untouched ones that fail the rules `Not interested`; see [`configuration.md`](./configuration.md#cutting-noise-also_match_titles-exclude_titles-remote_regions).)
+
 `To Apply → Applied → Interviewing → Rejected`, plus `Not interested` for jobs you dismiss, is enforced only by the dashboard (`STATUSES` in `src/storage/models.py`; a POST with any other status is refused). `Not interested` jobs are skipped by `make process` and `make contacts`, and archived like `To Apply` ones when they close — the database column is a free-text string with no `CHECK` constraint. Editing a row directly (e.g. via a SQLite browser) could set any string and the app wouldn't reject it.
 
 ## Dead postings and the archive
