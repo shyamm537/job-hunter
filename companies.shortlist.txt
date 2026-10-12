@@ -1,0 +1,116 @@
+# DRAFT employer shortlist for companies.txt (Australia + India, data science,
+# analytics, ML/AI, internships; data engineer roles are not the target).
+#
+# NOT VERIFIED: the cloud sandbox this was drafted in cannot reach Workable or
+# Workday hosts, so nothing here has been checked against a live board. Plain
+# names are safe to paste: `make resolve` tries them on Greenhouse, Lever, Ashby
+# and Workable and simply finds nothing for the ones that are not on those boards.
+# The Workday URLs are from memory; the site segment (last part) is the likeliest
+# thing to be wrong. Run `make validate` after adding them, and check each
+# tenant's /robots.txt for a rule against /wday/ first.
+
+# --- Australia: tech, product and data-heavy companies (Workable / Lever / Greenhouse / Ashby) ---
+Canva
+Atlassian
+Xero
+MYOB
+Tracksuit
+Mable
+Squiz
+LegalVision
+Leap Legal Software
+Culture Amp
+Airwallex
+SafetyCulture
+Linktree
+Employment Hero
+Zip Co | zip
+Afterpay
+Tyro Payments | tyro
+Judo Bank | judo
+Block
+Seek
+REA Group
+Domain
+Nearmap
+Canberra Data Centres
+Mantel Group
+Versent
+Presto Digital
+Eliiza
+Data61
+Quantium
+Cuscal
+Pushpay
+Prospa
+Vow
+Heidi Health | heidihealth
+Harrison.ai | harrison
+Lorica
+Spriggy
+Swoop
+Finder
+Zepto
+Tiimely
+
+# --- India: product, fintech and data-heavy companies ---
+Razorpay
+CRED
+Swiggy
+Zomato
+Meesho
+PhonePe
+Groww
+Freshworks
+Zoho
+Postman
+Uber
+Sprinklr
+Mindtickle
+Chargebee
+BrowserStack
+Dream11
+ShareChat
+Juspay
+Navi
+Ola
+Paytm
+Flipkart
+Myntra
+Nykaa
+PolicyBazaar
+Cleartrip
+Delhivery
+InMobi
+Clevertap
+Hasura
+Dunzo
+Slice
+Jar
+Rapido
+Lenskart
+Urban Company | urbancompany
+Observe.AI | observeai
+Sarvam AI | sarvam
+Krutrim
+
+# --- Workday employers (careers URLs, from memory; check site name + robots.txt) ---
+# Note: one site per tenant, and boards of 2,000+ postings cannot be read.
+Commonwealth Bank | cba, https://cba.wd3.myworkdayjobs.com/CommBank_Careers
+National Australia Bank | nab, https://nab.wd3.myworkdayjobs.com/nab_careers
+ANZ | anz, https://anz.wd3.myworkdayjobs.com/ANZ_Careers
+UNSW | unsw, https://unsw.wd3.myworkdayjobs.com/UNSW_Careers
+Bunnings | bunnings
+Flinders University | flinders
+Mastercard | mastercard, https://mastercard.wd1.myworkdayjobs.com/CorporateCareers
+
+# --- Workday employers to look up yourself (open the careers page, copy the URL) ---
+# Australia: Westpac, Woolworths Group, Coles Group, Telstra, Optus, Qantas, IAG,
+#   Suncorp, Medibank, AGL, Origin Energy, Transurban, BHP, Rio Tinto, Woodside,
+#   Santos, Wesfarmers, Deloitte AU, University of Melbourne, Monash, ANU, UQ, RMIT,
+#   Deakin, University of Sydney, Services Australia, CSIRO.
+# India (global capability centres hiring in Bengaluru/Hyderabad/Pune/Chennai):
+#   Mastercard, Visa, PayPal, Walmart Global Tech, Target, Wells Fargo, Barclays,
+#   JPMorgan, Goldman Sachs, Morgan Stanley, American Express, Fidelity, Thomson
+#   Reuters, Adobe, Intuit, Autodesk, Nutanix, VMware, Cisco, Dell, Salesforce
+#   (several of those boards exceed 2,000 postings and cannot be read).
